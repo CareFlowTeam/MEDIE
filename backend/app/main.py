@@ -9,6 +9,7 @@ from app.models.pill_predictor import load_model
 from app.api import drug
 from app.api import analyze
 from app.api import pharmacy
+from routers import device, pills
 
 app = FastAPI(title="MedicLens API", version="2.0")
 
@@ -39,3 +40,5 @@ app.include_router(pill.router)
 app.include_router(drug.router)
 app.include_router(analyze.router)
 app.include_router(pharmacy.router)
+app.include_router(device.router)
+app.include_router(pills.router)
