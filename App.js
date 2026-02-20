@@ -8,7 +8,23 @@ import * as Location from 'expo-location';
 import { Audio } from 'expo-av';
 import { BackHandler, ToastAndroid, Platform } from 'react-native';
 import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
+import 'react-native-get-random-values';
+import { getRandomBytes } from 'expo-crypto';
 
+// 🔥 CryptoJS가 사용할 랜덤 엔진 연결
+global.crypto = {
+  getRandomValues: (typedArray) => {
+    const bytes = getRandomBytes(typedArray.length);
+    typedArray.set(bytes);
+    return typedArray;
+  },
+};
+import CryptoJS from 'crypto-js';
+
+
+const AES_SECRET_KEY = 'MY_SUPER_SECRET_32BYTE_KEY'; 
 const { width, height } = Dimensions.get('window');
 const SCAN_GUIDE_SIZE = width * 0.75;
 // const API_URL = "https://mediclens-backend.azurewebsites.net/analyze";
@@ -28,6 +44,7 @@ export default function App() {
   const [drugImageUrl, setDrugImageUrl] = useState(null);
   const [nearbyPharmacies, setNearbyPharmacies] = useState([]);
   const [isSearchingMap, setIsSearchingMap] = useState(false);
+  const [myPills, setMyPills] = useState([]);
   const cameraRef = useRef(null);
   
   // 🎭 캐릭터 애니메이션
@@ -219,7 +236,56 @@ useEffect(() => {
 
 
   
+  // ------------------------------------------------------------------------------------------
+  // 암호화 파트
+  const STORAGE_KEY = 'MY_PILL_ENCRYPTED';
+  const SECURE_KEY_NAME = 'MY_PILL_AES_KEY';
 
+  // 🔐 최초 1회만 AES 키 생성
+  const getOrCreateAESKey = async () => {
+    let key = await SecureStore.getItemAsync(SECURE_KEY_NAME);
+
+    if (!key) {
+      key = CryptoJS.lib.WordArray.random(32).toString(); // 256bit
+      await SecureStore.setItemAsync(SECURE_KEY_NAME, key);
+    }
+
+    return key;
+};
+
+const encryptPills = async (pillList) => {
+  const key = await getOrCreateAESKey();
+  const json = JSON.stringify(pillList);
+
+  return CryptoJS.AES.encrypt(json, key).toString();
+};
+
+const decryptPills = async (cipherText) => {
+  const key = await getOrCreateAESKey();
+
+  const bytes = CryptoJS.AES.decrypt(cipherText, key);
+  const decrypted = bytes.toString(CryptoJS.enc.Utf8);
+
+  return JSON.parse(decrypted);
+  };
+  
+  useEffect(() => {
+  const loadMyPills = async () => {
+    try {
+      const encrypted = await AsyncStorage.getItem(STORAGE_KEY);
+      if (!encrypted) return;
+
+      const decrypted = await decryptPills(encrypted);
+      setMyPills(decrypted);
+    } catch (e) {
+      console.error('알약 복원 실패', e);
+    }
+  };
+
+  loadMyPills();
+}, []);
+  
+  // ------------------------------------------------------------------------------------------
 
 
   // ... (위 import, state, UI 코드는 전부 동일)
@@ -331,6 +397,21 @@ setShowResult(true);
   }
 };
 
+  
+  // 🏠 오른쪽 상단 Home 아이콘 버튼
+const HomeFloatingButton = () => {
+  if (appMode === 'HOME' || !appMode) return null;
+
+  return (
+    <TouchableOpacity
+      style={styles.homeFloatingBtn}
+      onPress={() => setAppMode('HOME')}
+      activeOpacity={0.8}
+    >
+      <Text style={styles.homeFloatingIcon}>🏠</Text>
+    </TouchableOpacity>
+  );
+};
 
   // 🏠 메뉴 공통 뒤로가기 버튼
   const BackToMenuBtn = () => (
@@ -344,17 +425,41 @@ setShowResult(true);
     </View>
   );
 
-  const handleRegisterPill = () => {
+  const handleRegisterPill = async () => {
   Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-  Alert.alert(
-    "등록 완료",
-    "내 복용약으로 등록되었습니다.",
-    [{ text: "확인", onPress: () => setShowResult(false) }]
-  );
+  const lines = aiResponse.split('\n');
 
-  // TODO (다음 단계)
-  // 서버에 복용약 저장 API 호출
+  const pillName =
+    lines.find(l => l.includes('알약 이름'))?.replace('💊 알약 이름: ', '') || '알 수 없음';
+
+  const confidence =
+    lines.find(l => l.includes('신뢰도'))?.replace('신뢰도: ', '').replace('%', '') || '0';
+
+  const usageIndex = lines.findIndex(l => l.includes('📌 복용 목적'));
+  const warningIndex = lines.findIndex(l => l.includes('⚠️ 주의사항'));
+
+  const usage = lines.slice(usageIndex + 1, warningIndex).join('\n');
+  const warning = lines.slice(warningIndex + 1).join('\n');
+
+  const newPill = {
+    name: pillName,
+    usage,
+    warning,
+    confidence,
+    createdAt: Date.now(),
+  };
+
+  const updated = [...myPills, newPill];
+  setMyPills(updated);
+
+  // 🔐 암호화 저장
+  const encrypted = await encryptPills(updated);
+  await AsyncStorage.setItem(STORAGE_KEY, encrypted);
+
+  Alert.alert('등록 완료', '내 복용약으로 등록되었습니다.', [
+    { text: '확인', onPress: () => setShowResult(false) },
+  ]);
 };
 
   // 📱 시작 화면
@@ -397,6 +502,16 @@ setShowResult(true);
     return (
       <SafeAreaView style={styles.safeArea}>
         <LinearGradient colors={['#F3E5F5', '#E8EAF6']} style={styles.menuContainer}>
+          
+          {/* 💊 내 복용중 알약 버튼 (HOME 전용 / 우상단) */}
+          <TouchableOpacity
+            style={styles.myPillButton}
+            activeOpacity={0.85}
+            onPress={() => setAppMode('MY_PILL')}
+          >
+            <Text style={styles.myPillText}>내 복용중 알약</Text>
+          </TouchableOpacity>
+
           <View style={styles.menuHeaderWrapper}>
             <Text style={styles.menuHeader}>무엇을 도와드릴까요?</Text>
             <View style={styles.headerUnderline} />
@@ -426,9 +541,95 @@ setShowResult(true);
     );
   }
 
+  if (appMode === 'MY_PILL') {
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <LinearGradient colors={['#F3E5F5', '#E8EAF6']} style={styles.subContainer}>
+
+        <Text style={styles.mapHeader}>💊 내 복용중 알약</Text>
+
+        {myPills.length === 0 ? (
+          <View style={{ marginTop: 80, alignItems: 'center', opacity: 0.6 }}>
+            <Text style={{ fontSize: 15 }}>등록된 알약이 없습니다</Text>
+            <Text style={{ fontSize: 13, marginTop: 6 }}>
+              약을 스캔 후 복용 알약으로 등록해보세요 🙂
+            </Text>
+          </View>
+        ) : (
+          <ScrollView style={styles.listScroll}>
+            {myPills.map((pill, idx) => (
+              <View key={idx} style={styles.dataCard}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.cardTitle}>{pill.name}</Text>
+                  <Text style={styles.cardSub}>
+                    신뢰도 {pill.confidence}%
+                  </Text>
+
+                  <Text style={{ marginTop: 10, fontSize: 13, fontWeight: 'bold' }}>
+                    📌 복용 목적
+                  </Text>
+                  <Text style={{ fontSize: 14, marginTop: 4 }}>
+                    {pill.usage}
+                  </Text>
+
+                  <Text style={{ marginTop: 10, fontSize: 13, fontWeight: 'bold', color: '#D32F2F' }}>
+                    ⚠️ 주의사항
+                  </Text>
+                  <Text style={{ fontSize: 14, marginTop: 4, color: '#D32F2F' }}>
+                    {pill.warning}
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      '삭제',
+                      '이 알약을 목록에서 제거할까요?',
+                      [
+                        { text: '취소', style: 'cancel' },
+                        {
+                          text: '삭제',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              // 1️⃣ 목록에서 삭제
+                              const updatedPills = myPills.filter((_, i) => i !== idx);
+
+                              // 2️⃣ state 업데이트
+                              setMyPills(updatedPills);
+
+                              // 3️⃣ 🔐 암호화 후 저장 (기존 설계 그대로)
+                              const encrypted = await encryptPills(updatedPills);
+                              await AsyncStorage.setItem(STORAGE_KEY, encrypted);
+
+                            } catch (e) {
+                              console.error('알약 삭제 실패', e);
+                              Alert.alert('오류', '알약 삭제 중 문제가 발생했습니다.');
+                            }
+                          },
+                        },
+                      ]
+                    );
+                  }}
+                >
+                  <Text style={{ fontSize: 18, marginLeft: 10 }}>🗑️</Text>
+                </TouchableOpacity>
+
+              </View>
+            ))}
+          </ScrollView>
+        )}
+
+        <BackToMenuBtn />
+      </LinearGradient>
+    </SafeAreaView>
+  );
+}
+
   if (appMode === 'SCAN') {
     return (
       <View style={styles.container}>
+        {/* <HomeFloatingButton />   */}
         <CameraView style={styles.camera} facing="back" ref={cameraRef} />
         <View style={styles.maskOverlay}>
           <View style={styles.maskFrameTop} />
@@ -490,9 +691,7 @@ setShowResult(true);
                 {/* 왼쪽 버튼 */}
                 <TouchableOpacity
                   style={[styles.modalActionBtn, styles.secondaryBtn]}
-                  onPress={() => {
-                    Alert.alert("알림", "복용 알약으로 등록되었습니다");
-                  }}
+                  onPress={handleRegisterPill}
                 >
                   <Text style={styles.secondaryBtnText}>복용 알약 등록</Text>
                 </TouchableOpacity>
@@ -522,6 +721,7 @@ setShowResult(true);
 if (appMode === 'MAP') {
   return (
     <SafeAreaView style={styles.safeArea}>
+      {/* <HomeFloatingButton />   */}
       <View style={styles.subContainer}>
         <Text style={styles.mapHeader}>📍 내 주변 당번 약국</Text>
 
@@ -607,6 +807,8 @@ if (appMode === 'MAP') {
   if (appMode === 'FAMILY') {
     return (
       <SafeAreaView style={styles.safeArea}>
+        
+
         <View style={styles.subContainer}>
           <Text style={styles.mapHeader}>👨‍👩‍👧 가족 케어 모드</Text>
           <ScrollView style={styles.listScroll}>
@@ -831,6 +1033,48 @@ primaryBtnText: {
   color: '#fff',
   fontWeight: 'bold',
   fontSize: 15,
+  },
+homeFloatingBtn: {
+  position: 'absolute',
+  top: Platform.OS === 'android' ? 50 : 15,
+  right: 16,
+  width: 40,
+  height: 40,
+  borderRadius: 20,
+  backgroundColor: '#fff',
+  justifyContent: 'center',
+  alignItems: 'center',
+  elevation: 6,
+  zIndex: 999,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.25,
+  shadowRadius: 4,
+},
+
+homeFloatingIcon: {
+  fontSize: 20,
+  },
+myPillButton: {
+  position: 'absolute',
+  top: 15,
+  right: 20,
+  backgroundColor: '#FFFFFF',
+  paddingHorizontal: 16,
+  paddingVertical: 8,
+  borderRadius: 20,
+  elevation: 4,
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.2,
+  shadowRadius: 4,
+  zIndex: 10,
+},
+
+myPillText: {
+  fontSize: 13,
+  fontWeight: 'bold',
+  color: '#FF7F50',
 },
   
 });
