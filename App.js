@@ -4,14 +4,19 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import * as Speech from 'expo-speech';
+import { Camera } from 'expo-camera';
 import * as Location from 'expo-location';
-import { Audio } from 'expo-av';
 import { BackHandler, ToastAndroid, Platform } from 'react-native';
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import 'react-native-get-random-values';
 import { getRandomBytes } from 'expo-crypto';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Switch } from 'react-native';
+import { v4 as uuidv4 } from 'uuid';
 
 // 🔥 CryptoJS가 사용할 랜덤 엔진 연결
 global.crypto = {
@@ -23,6 +28,7 @@ global.crypto = {
 };
 import CryptoJS from 'crypto-js';
 
+const DEVICE_ID = Device.modelId ?? 'unknown-device';
 
 const AES_SECRET_KEY = 'MY_SUPER_SECRET_32BYTE_KEY'; 
 const { width, height } = Dimensions.get('window');
@@ -37,7 +43,7 @@ const MASCOT_IMAGE = "https://i.postimg.cc/XJQN2c1M/image-4.jpg";
 export default function App() {
   const [permission, requestPermission] = useCameraPermissions();
   const [isStarted, setIsStarted] = useState(false);
-  const [appMode, setAppMode] = useState(null); 
+  const [appMode, setAppMode] = useState('HOME'); 
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showResult, setShowResult] = useState(false);
   const [aiResponse, setAiResponse] = useState("");
@@ -45,8 +51,223 @@ export default function App() {
   const [nearbyPharmacies, setNearbyPharmacies] = useState([]);
   const [isSearchingMap, setIsSearchingMap] = useState(false);
   const [myPills, setMyPills] = useState([]);
+  const [hasCameraPermission, setHasCameraPermission] = useState(null);
+  
   const cameraRef = useRef(null);
   
+
+// 앱 시작 시 알림 권한 요청 (App.js 상단 useEffect)
+  useEffect(() => {
+  const init = async () => {
+    if (!Device.isDevice) return;
+
+    const { status } = await Notifications.requestPermissionsAsync();
+    if (status !== 'granted') return;
+
+    if (Platform.OS === 'android') {
+      await Notifications.setNotificationChannelAsync('pill-alarm', {
+        name: '복약 알람',
+        importance: Notifications.AndroidImportance.MAX,
+        sound: 'default',
+        vibrationPattern: [0, 500, 500, 500],
+      });
+    }
+  };
+  init();
+}, []);
+
+// 앱 시작 or 카메라 화면 진입 시 권한 요청
+useEffect(() => {
+  (async () => {
+    const { status } = await Camera.requestCameraPermissionsAsync();
+    setHasCameraPermission(status === 'granted');
+  })();
+}, []);
+
+
+// 알람파트
+  // --------------------------------------------------------------------------------------
+
+
+// ⏰ 알람 관련 상태
+const [alarms, setAlarms] = useState([]);
+const [showTimePicker, setShowTimePicker] = useState(false);
+const [selectedAlarmId, setSelectedAlarmId] = useState(null);
+
+// 🔔 알림 옵션
+const [alarmSoundOn, setAlarmSoundOn] = useState(true);
+const [alarmVibrateOn, setAlarmVibrateOn] = useState(true);
+
+// 📊 복용 히스토리
+const [pillHistory, setPillHistory] = useState([]);
+  
+  
+  
+  
+  
+
+  // 알람 저장 / 불러오기 (AsyncStorage)
+const ALARM_KEY = 'PILL_ALARMS';
+const HISTORY_KEY = 'PILL_HISTORY';
+
+useEffect(() => {
+  const load = async () => {
+    const a = await AsyncStorage.getItem(ALARM_KEY);
+    const h = await AsyncStorage.getItem(HISTORY_KEY);
+    if (a) setAlarms(JSON.parse(a));
+    if (h) setPillHistory(JSON.parse(h));
+  };
+  load();
+}, []);
+
+const saveAlarms = async (list) => {
+  setAlarms(list);
+  await AsyncStorage.setItem(ALARM_KEY, JSON.stringify(list));
+};
+
+const saveHistory = async (list) => {
+  setPillHistory(list);
+  await AsyncStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  };
+
+
+// 시간 변경 (DateTimePicker)
+  const onTimeChange = (event, date) => {
+  setShowTimePicker(false);
+  if (!date) return;
+
+  const hh = date.getHours().toString().padStart(2, '0');
+  const mm = date.getMinutes().toString().padStart(2, '0');
+
+  const updated = alarms.map(a =>
+    a.id === selectedAlarmId ? { ...a, time: `${hh}:${mm}` } : a
+  );
+
+  saveAlarms(updated);
+  };
+  
+
+  // 복용 완료 처리 + 히스토리 기록
+  const markAsTaken = async (alarm) => {
+  const record = {
+    pillName: alarm.pillName,
+    scheduledTime: alarm.time,
+    takenAt: new Date().toISOString(),
+  };
+
+  const updated = [record, ...pillHistory];
+  saveHistory(updated);
+
+  if (alarmVibrateOn) {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }
+
+
+
+    await syncHistoryToServer(record);
+};
+  
+  
+
+  
+
+  // 알람 스케줄링 함수
+const scheduleDailyAlarm = async ({
+  pillName,
+  time,          // 'HH:mm'
+  soundOn,
+  vibrationOn,
+}) => {
+  try {
+
+    const [hour, minute] = time.split(':').map(Number);
+
+  if (Number.isNaN(hour) || Number.isNaN(minute)) {
+    throw new Error('Invalid alarm time');
+  }
+
+  return await Notifications.scheduleNotificationAsync({
+    content: {
+      title: '💊 복약 시간입니다',
+      body: `${pillName} 복용할 시간이에요`,
+      sound: soundOn ? 'default' : undefined,
+      vibrate: vibrationOn ? [0, 500, 500, 500] : undefined,
+    },
+    trigger: {
+      hour,
+      minute,
+      repeats: true,
+    },
+    channelId: 'pill-alarm', // 🔥 필수
+  });
+    
+  } catch (e) {
+    console.error('알람 스케줄 실패', e);
+    Alert.alert('알람 오류', '알람을 설정할 수 없습니다.');
+    throw e;
+  }
+};
+
+
+  
+  // 알람 해제 (비활성화 시)
+  const cancelAllAlarms = async () => {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+  };
+  
+  // 알약 선택 → 알람 자동 생성
+  const addAlarmFromMyPill = async (pillName) => {
+  const newAlarm = {
+    id: Date.now().toString(),
+    pillName,
+    time: '08:00',
+    enabled: true,
+  };
+
+  const updated = [...alarms, newAlarm];
+  saveAlarms(updated);
+  };
+
+
+  // 복용 기록 서버 전송
+  const syncHistoryToServer = async (record) => {
+  await fetch(`${API_URL}/api/history`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: DEVICE_ID,
+      pill_name: record.pillName,
+      scheduled_time: record.scheduledTime,
+      taken_at: record.takenAt,
+    }),
+  });
+};
+  
+// 서버 → 앱 히스토리 동기화
+  const loadHistoryFromServer = async () => {
+  const res = await fetch(`${API_URL}/api/history/${DEVICE_ID}`);
+  const data = await res.json();
+  saveHistory(data);
+};
+  
+// ① 앱 최초 실행 시 (서버 → 앱 동기화)
+  useEffect(() => {
+  loadHistoryFromServer();
+  }, []);
+  
+
+  // ② HISTORY 화면 들어갈 때 (최신화)
+  useEffect(() => {
+  if (appMode === 'HISTORY') {
+    loadHistoryFromServer();
+  }
+  }, [appMode]);
+  
+
+
+
+  // --------------------------------------------------------------------------------------
+
   // 🎭 캐릭터 애니메이션
   const mascotScale = useRef(new Animated.Value(1)).current;
 
@@ -129,12 +350,7 @@ useEffect(() => {
   const PHARM_API_URL =
   "https://mediclens-backend.azurewebsites.net/pharmacies/duty";
   
-  const playStartSound = async () => {
-    try {
-      const { sound } = await Audio.Sound.createAsync({ uri: 'https://www.soundjay.com/buttons/sounds/button-30.mp3' });
-      await sound.playAsync();
-    } catch (e) { console.log(e); }
-  };
+
 
   const openKakaoMapDetail = (p) => {
   const query = encodeURIComponent(`${p.name}`);
@@ -290,7 +506,7 @@ const decryptPills = async (cipherText) => {
 
   // ... (위 import, state, UI 코드는 전부 동일)
 
-const API_URL = "https://mediclens-backend.azurewebsites.net/pill/analyze";
+// const API_URL = "https://mediclens-backend.azurewebsites.net/pill/analyze";
 
 const handleScan = async () => {
   if (!cameraRef.current) return;
@@ -443,11 +659,20 @@ const HomeFloatingButton = () => {
   const warning = lines.slice(warningIndex + 1).join('\n');
 
   const newPill = {
-    name: pillName,
-    usage,
-    warning,
-    confidence,
-    createdAt: Date.now(),
+  id: uuidv4(),
+  name: pillName,
+  usage,
+  warning,
+  confidence,
+  schedules: [
+    {
+      time: '08:00',
+      notificationId: null,
+      enabled: true,
+      takenToday: false,
+    },
+  ],
+  createdAt: Date.now(),
   };
 
   const updated = [...myPills, newPill];
@@ -460,7 +685,11 @@ const HomeFloatingButton = () => {
   Alert.alert('등록 완료', '내 복용약으로 등록되었습니다.', [
     { text: '확인', onPress: () => setShowResult(false) },
   ]);
-};
+  };
+  
+
+
+
 
   // 📱 시작 화면
   if (!isStarted) {
@@ -486,7 +715,6 @@ const HomeFloatingButton = () => {
           <TouchableOpacity 
             style={styles.premiumBtn} 
             onPress={() => { 
-              playStartSound(); 
               setIsStarted(true); 
               setAppMode('HOME'); 
             }}
@@ -541,7 +769,7 @@ const HomeFloatingButton = () => {
     );
   }
 
-  if (appMode === 'MY_PILL') {
+if (appMode === 'MY_PILL') {
   return (
     <SafeAreaView style={styles.safeArea}>
       <LinearGradient colors={['#F3E5F5', '#E8EAF6']} style={styles.subContainer}>
@@ -559,11 +787,11 @@ const HomeFloatingButton = () => {
           <ScrollView style={styles.listScroll}>
             {myPills.map((pill, idx) => (
               <View key={idx} style={styles.dataCard}>
+
+                {/* 왼쪽 정보 영역 */}
                 <View style={{ flex: 1 }}>
                   <Text style={styles.cardTitle}>{pill.name}</Text>
-                  <Text style={styles.cardSub}>
-                    신뢰도 {pill.confidence}%
-                  </Text>
+                  <Text style={styles.cardSub}>신뢰도 {pill.confidence}%</Text>
 
                   <Text style={{ marginTop: 10, fontSize: 13, fontWeight: 'bold' }}>
                     📌 복용 목적
@@ -578,8 +806,80 @@ const HomeFloatingButton = () => {
                   <Text style={{ fontSize: 14, marginTop: 4, color: '#D32F2F' }}>
                     {pill.warning}
                   </Text>
+
+                  {/* 🔔 복약 알람 영역 (3번) */}
+                  <View style={{ marginTop: 12 }}>
+                    <Text style={{ fontSize: 13, fontWeight: 'bold' }}>
+                      ⏰ 복약 알람
+                    </Text>
+
+                    <Text style={{ marginTop: 4, fontSize: 14 }}>
+                      매일 {pill.schedules[0].time}
+                    </Text>
+
+                    <TouchableOpacity
+                      style={{ marginTop: 6 }}
+                      onPress={async () => {
+                        try {
+                          const updated = [...myPills];
+
+                        // 🔥 기존 알람 있으면 취소
+                          if (pill.notificationId) {
+                            await Notifications.cancelScheduledNotificationAsync(
+                              pill.notificationId
+                            );
+                          }
+                          
+                          // 🔔 알람 켜기
+                          if (!pill.alarmEnabled) {
+                            const time = pill.schedules[0].time;
+
+                            const notificationId = await scheduleDailyAlarm({
+                              pillName: pill.name,
+                              time,
+                              soundOn: true,
+                              vibrationOn: true,
+                            });
+
+                            updated[idx] = {
+                            ...pill,
+                            alarmEnabled: true,
+                            notificationId,
+                          };
+                          }
+                          // 🔕 알람 끄기
+                          else {
+                            if (pill.notificationId) {
+                              await Notifications.cancelScheduledNotificationAsync(
+                                pill.notificationId
+                              );
+                            }
+
+                            updated[idx] = {
+                              ...pill,
+                              alarmEnabled: false,
+                              notificationId: null,
+                            };
+                          }
+
+                          setMyPills(updated);
+                          const encrypted = await encryptPills(updated);
+                          await AsyncStorage.setItem(STORAGE_KEY, encrypted);
+
+                        } catch (e) {
+                          console.error('알람 설정 오류', e);
+                          Alert.alert('오류', '알람 설정 중 문제가 발생했습니다.');
+                        }
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, color: '#5E35B1' }}>
+                        {pill.alarmEnabled ? '🔕 알람 끄기' : '🔔 알람 켜기'}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
+                {/* 🗑️ 삭제 버튼 (4번: 알람까지 같이 정리) */}
                 <TouchableOpacity
                   onPress={() => {
                     Alert.alert(
@@ -592,19 +892,31 @@ const HomeFloatingButton = () => {
                           style: 'destructive',
                           onPress: async () => {
                             try {
-                              // 1️⃣ 목록에서 삭제
-                              const updatedPills = myPills.filter((_, i) => i !== idx);
+                              // 🔔 알람 취소
+                              if (pill.notificationId) {
+                                await Notifications.cancelScheduledNotificationAsync(
+                                  pill.notificationId
+                                );
+                              }
 
-                              // 2️⃣ state 업데이트
+                              // 목록에서 제거
+                              const updatedPills =
+                                myPills.filter((_, i) => i !== idx);
+
                               setMyPills(updatedPills);
 
-                              // 3️⃣ 🔐 암호화 후 저장 (기존 설계 그대로)
-                              const encrypted = await encryptPills(updatedPills);
-                              await AsyncStorage.setItem(STORAGE_KEY, encrypted);
-
+                              const encrypted =
+                                await encryptPills(updatedPills);
+                              await AsyncStorage.setItem(
+                                STORAGE_KEY,
+                                encrypted
+                              );
                             } catch (e) {
                               console.error('알약 삭제 실패', e);
-                              Alert.alert('오류', '알약 삭제 중 문제가 발생했습니다.');
+                              Alert.alert(
+                                '오류',
+                                '알약 삭제 중 문제가 발생했습니다.'
+                              );
                             }
                           },
                         },
@@ -776,32 +1088,139 @@ if (appMode === 'MAP') {
 }
 
   // ⏰ 복약 알람
-  if (appMode === 'ALARM') {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.subContainer}>
-          <Text style={styles.mapHeader}>⏰ 스마트 복약 알람</Text>
-          <ScrollView style={styles.listScroll}>
-            <View style={styles.dataCard}>
-              <View>
-                <Text style={styles.cardTitle}>신지로이드 정 (0.1mg)</Text>
-                <Text style={styles.cardSub}>매일 오전 07:30 | 공복 복용</Text>
-              </View>
-              <Text style={styles.statusOn}>활성</Text>
-            </View>
-            <View style={styles.dataCard}>
-              <View>
-                <Text style={styles.cardTitle}>오메가3 영양제</Text>
-                <Text style={styles.cardSub}>매일 오후 13:00 | 식후 30분</Text>
-              </View>
-              <Text style={styles.statusOn}>활성</Text>
-            </View>
-          </ScrollView>
-          <BackToMenuBtn />
+if (appMode === 'ALARM') {
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.subContainer}>
+        <Text style={styles.mapHeader}>⏰ 복약 알람</Text>
+
+        {/* 🔧 옵션 */}
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+          <TouchableOpacity onPress={() => setAlarmSoundOn(v => !v)}>
+            <Text>🔊 소리 {alarmSoundOn ? 'ON' : 'OFF'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setAlarmVibrateOn(v => !v)}>
+            <Text>📳 진동 {alarmVibrateOn ? 'ON' : 'OFF'}</Text>
+          </TouchableOpacity>
         </View>
-      </SafeAreaView>
-    );
-  }
+
+        <ScrollView style={{ marginTop: 20 }}>
+          {alarms.map(a => (
+            <View key={a.id} style={styles.dataCard}>
+              <View>
+                <Text style={styles.cardTitle}>{a.pillName}</Text>
+
+                {/* ⏰ 시간 누르면 TimePicker */}
+                <TouchableOpacity
+                  onPress={() => {
+                    setSelectedAlarmId(a.id);
+                    setShowTimePicker(true);
+                  }}
+                >
+                  <Text style={styles.cardSub}>⏰ {a.time}</Text>
+                </TouchableOpacity>
+              </View>
+
+              <TouchableOpacity onPress={() => markAsTaken(a)}>
+                <Text style={{ color: '#4CAF50', fontWeight: 'bold' }}>
+                  복용 완료
+                </Text>
+              </TouchableOpacity>
+            </View>
+          ))}
+        </ScrollView>
+
+        {/* ⏱️ 시간 선택 */}
+        {showTimePicker && (
+          <DateTimePicker
+            mode="time"
+            value={new Date()}
+            is24Hour
+            onChange={async (event, selectedDate) => {
+              setShowTimePicker(false);
+              if (event.type === 'dismissed') {
+                return;
+              }
+
+              if (!selectedDate) {
+                return;
+              }
+
+              // 1️⃣ 선택된 알람 찾기
+              const alarm = alarms.find(a => a.id === selectedAlarmId);
+              if (!alarm) return;
+
+              // 2️⃣ 시간 문자열 만들기
+              const hh = selectedDate.getHours().toString().padStart(2, '0');
+              const mm = selectedDate.getMinutes().toString().padStart(2, '0');
+              const timeStr = `${hh}:${mm}`;
+
+              // 0️⃣ 기존 알람 취소
+              if (alarm.notificationId) {
+                await Notifications.cancelScheduledNotificationAsync(
+                  alarm.notificationId
+                );
+              }
+
+              // 1️⃣ 새 알람 등록
+              const notificationId = await scheduleDailyAlarm({
+                pillName: alarm.pillName,
+                time: timeStr,
+                soundOn: alarmSoundOn,
+                vibrationOn: alarmVibrateOn,
+              });
+
+              // 2️⃣ alarms 업데이트
+              const updatedAlarms = alarms.map(a =>
+                a.id === selectedAlarmId
+                  ? { ...a, time: timeStr, notificationId }
+                  : a
+              );
+
+
+              saveAlarms(updatedAlarms);
+
+              Alert.alert(
+                '알람 설정 완료',
+                `${alarm.pillName} 알람이 ${timeStr}에 설정되었습니다`
+              );
+            }}
+          />
+        )}
+
+        <BackToMenuBtn />
+      </View>
+    </SafeAreaView>
+  );
+}
+  
+  // HISTORY 화면
+  if (appMode === 'HISTORY') {
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <View style={styles.subContainer}>
+        <Text style={styles.mapHeader}>📊 복용 기록</Text>
+
+        <ScrollView>
+          {pillHistory.length === 0 && (
+            <Text>복용 기록이 없습니다</Text>
+          )}
+
+          {pillHistory.map(h => (
+            <View key={h.takenAt} style={styles.dataCard}>
+              <Text style={styles.cardTitle}>{h.pillName}</Text>
+              <Text style={styles.cardSub}>
+                {new Date(h.takenAt).toLocaleString()}
+              </Text>
+            </View>
+          ))}
+        </ScrollView>
+
+        <BackToMenuBtn />
+      </View>
+    </SafeAreaView>
+  );
+}
 
   // 👨‍👩‍👧 가족 케어
   if (appMode === 'FAMILY') {

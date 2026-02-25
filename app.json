@@ -16,7 +16,8 @@
           "recordAudioAndroid": true
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -35,12 +36,19 @@
       "edgeToEdgeEnabled": true,
       "package": "com.anonymous.MedicLens",
       "permissions": [
-        "ACCESS_FINE_LOCATION"
+        "ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "locationPermission": "주변 약국 검색을 위해 위치 정보를 사용합니다."
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "08f29fdf-dd9f-49f9-ae32-fd713de175ff"
+      }
     }
   }
 }
