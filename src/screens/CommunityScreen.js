@@ -42,6 +42,8 @@ export default function CommunityScreen({
     );
   }, [selectedCategory]);
 
+  const isBoardCategory = selectedCategory !== 'support';
+
   const getBoardUrl = useCallback(() => {
     if (selectedTab === 'latest') {
       return `${BOARD_API_BASE}/boards/type/${selectedCategory}`;
@@ -51,13 +53,19 @@ export default function CommunityScreen({
   }, [selectedCategory, selectedTab]);
 
   const fetchBoards = useCallback(async () => {
+    if (!isBoardCategory) {
+      setPosts([]);
+      setIsLoading(false);
+      setIsRefreshing(false);
+      return;
+    }
+
     try {
       setIsLoading(true);
 
       let url = getBoardUrl();
       let res = await fetch(url);
 
-      // popular / recommend API가 아직 배포 안 된 경우 fallback
       if (!res.ok && (selectedTab === 'popular' || selectedTab === 'recommend')) {
         url = `${BOARD_API_BASE}/boards/type/${selectedCategory}`;
         res = await fetch(url);
@@ -85,18 +93,35 @@ export default function CommunityScreen({
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [getBoardUrl, selectedCategory, selectedTab]);
+  }, [getBoardUrl, isBoardCategory, selectedCategory, selectedTab]);
 
   useEffect(() => {
     fetchBoards();
   }, [fetchBoards]);
 
   const handleRefresh = () => {
+    if (!isBoardCategory) return;
     setIsRefreshing(true);
     fetchBoards();
   };
 
+  const handleCategoryPress = (categoryKey) => {
+    if (categoryKey === 'support') {
+      setAppMode('SUPPORT');
+      return;
+    }
+
+    setSelectedCategory(categoryKey);
+    setSelectedTab('latest');
+    setSearchKeyword('');
+  };
+
   const handlePressWrite = () => {
+    if (selectedCategory === 'support') {
+      setAppMode('SUPPORT_WRITE');
+      return;
+    }
+
     if (typeof setWriteBoardType === 'function') {
       setWriteBoardType(selectedCategory);
     }
@@ -104,6 +129,10 @@ export default function CommunityScreen({
   };
 
   const handlePressSearch = () => {
+    if (!isBoardCategory) {
+      Alert.alert('안내', '고객센터는 별도 화면에서 검색 또는 확인해주세요.');
+      return;
+    }
     setIsSearchOpen(true);
   };
 
@@ -204,7 +233,6 @@ export default function CommunityScreen({
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={[styles.subContainer, { paddingBottom: 8 }]}>
-        {/* 헤더 */}
         <View
           style={{
             marginTop: 2,
@@ -256,7 +284,6 @@ export default function CommunityScreen({
           </TouchableOpacity>
         </View>
 
-        {/* 카테고리 */}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -274,7 +301,7 @@ export default function CommunityScreen({
               <TouchableOpacity
                 key={category.key}
                 activeOpacity={0.8}
-                onPress={() => setSelectedCategory(category.key)}
+                onPress={() => handleCategoryPress(category.key)}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
@@ -305,7 +332,6 @@ export default function CommunityScreen({
           })}
         </ScrollView>
 
-        {/* 탭 */}
         <View
           style={{
             flexDirection: 'row',
@@ -350,7 +376,6 @@ export default function CommunityScreen({
           })}
         </View>
 
-        {/* 작게 줄인 상태 바 */}
         <View
           style={{
             marginTop: 2,

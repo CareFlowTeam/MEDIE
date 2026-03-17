@@ -1,3 +1,4 @@
+// src/constants/boardCategories.js
 export const BOARD_CATEGORIES = [
   { key: 'free', label: '자유수다', icon: '💬' },
   { key: 'med_question', label: '복약질문', icon: '💊' },

@@ -10,7 +10,7 @@ from app.api import drug
 from app.api import analyze
 from app.api import pharmacy
 from app.routers import device, pills, pill_history
-from app.routers.board_router import router as board_router
+from app.routers import board_router, support_router
 from app.core.database import Base, engine
 
 app = FastAPI(title="MedicHubs API", version="2.0")
@@ -53,4 +53,5 @@ app.include_router(pharmacy.router)
 app.include_router(device.router)
 app.include_router(pills.router)
 app.include_router(pill_history.router)
-app.include_router(board_router)
+app.include_router(board_router.router)
+app.include_router(support_router.router)

@@ -23,6 +23,9 @@ import CommunityScreen from './src/screens/CommunityScreen';
 import BoardScreen from './src/screens/BoardScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import WriteBoardScreen from './src/screens/WriteBoardScreen';
+import SupportMainScreen from './src/screens/SupportMainScreen';
+import SupportListScreen from './src/screens/SupportListScreen';
+import SupportWriteScreen from './src/screens/SupportWriteScreen';
 
 /* hooks */
 import useCameraScan from './src/hooks/useCameraScan';
@@ -36,6 +39,8 @@ const STORAGE_KEY = 'MY_PILLS_JSON';
 export default function App() {
   const [isStarted, setIsStarted] = useState(false);
   const [appMode, setAppMode] = useState('HOME');
+
+  const [selectedSupportPost, setSelectedSupportPost] = useState(null);
 
 
   
@@ -279,6 +284,30 @@ export default function App() {
                 onBack={handleBackToCommunity}
               />
             );
+          
+          case 'SUPPORT':
+            return (
+              <SupportMainScreen
+              setAppMode={setAppMode}
+              onOpenSupport={(item) => {
+                setSelectedSupportPost(item);
+                setAppMode('SUPPORT_DETAIL');
+              }}
+              />
+              );
+          
+            case 'SUPPORT_DETAIL':
+              return (
+                    <SupportListScreen
+                    post={selectedSupportPost}
+                    onBack={() => setAppMode('SUPPORT')}
+                    setAppMode={setAppMode}
+                  />
+                  );
+          
+          
+          case 'SUPPORT_WRITE':
+            return <SupportWriteScreen setAppMode={setAppMode} />;
           
           case 'WRITE_BOARD':
             return <WriteBoardScreen setAppMode={setAppMode} />;
