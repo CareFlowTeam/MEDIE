@@ -1,6 +1,7 @@
 // app.js
 import React, { useState, useCallback, useEffect } from 'react';
-import { SafeAreaView, Alert } from 'react-native';
+import { SafeAreaView, Alert, View, ActivityIndicator } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
 import { initNotifications } from './src/services/notificationInit';
 import * as Notifications from 'expo-notifications';
 
@@ -22,6 +23,7 @@ import SearchPillScreen from './src/screens/SearchPillScreen';
 import CommunityScreen from './src/screens/CommunityScreen';
 import BoardScreen from './src/screens/BoardScreen';
 import LoginScreen from './src/screens/LoginScreen';
+import RegisterScreen from './src/screens/RegisterScreen';
 import WriteBoardScreen from './src/screens/WriteBoardScreen';
 import SupportMainScreen from './src/screens/SupportMainScreen';
 import SupportListScreen from './src/screens/SupportListScreen';
@@ -32,7 +34,6 @@ import useCameraScan from './src/hooks/useCameraScan';
 import usePharmacySearch from './src/hooks/usePharmacySearch';
 import useBackHandler from './src/hooks/useBackHandler';
 import useMyPills from './src/hooks/useMyPills';
-// import usePillAlarms from './src/hooks/usePillAlarms';
 
 const STORAGE_KEY = 'MY_PILLS_JSON';
 
@@ -41,15 +42,17 @@ export default function App() {
   const [appMode, setAppMode] = useState('HOME');
 
   const [selectedSupportPost, setSelectedSupportPost] = useState(null);
+  const [writeBoardType, setWriteBoardType] = useState('free');
 
-
-  
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [isCheckingLogin, setIsCheckingLogin] = useState(true);
 
   // 게시판 상세용 선택 게시글 상태
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedBoardTitle, setSelectedBoardTitle] = useState('자유게시판');
 
-    const handleOpenBoard = (post, boardTitle = '자유게시판') => {
+  const handleOpenBoard = (post, boardTitle = '자유게시판') => {
     setSelectedPost(post);
     setSelectedBoardTitle(boardTitle);
     setAppMode('BOARD');
@@ -59,7 +62,31 @@ export default function App() {
     setAppMode('COMMUNITY');
   };
 
-  
+  useEffect(() => {
+    const loadLoginState = async () => {
+      try {
+        const accessToken = await SecureStore.getItemAsync('access_token');
+        const userId = await SecureStore.getItemAsync('user_id');
+        const userName = await SecureStore.getItemAsync('user_name');
+        const userEmail = await SecureStore.getItemAsync('user_email');
+
+        if (accessToken && userId && userName && userEmail) {
+          setIsLoggedIn(true);
+          setUser({
+            id: userId,
+            name: userName,
+            email: userEmail,
+          });
+        }
+      } catch (e) {
+        console.error('자동 로그인 확인 실패:', e);
+      } finally {
+        setIsCheckingLogin(false);
+      }
+    };
+
+    loadLoginState();
+  }, []);
 
   // 알림 초기화 1회
   useEffect(() => {
@@ -180,11 +207,6 @@ export default function App() {
     setShowResult,
   });
 
-
-
-
-  
-
   if (!isStarted) {
     return (
       <StartScreen
@@ -193,6 +215,16 @@ export default function App() {
           setAppMode('HOME');
         }}
       />
+    );
+  }
+
+  if (isCheckingLogin) {
+    return (
+      <SafeAreaView style={{ flex: 1 }}>
+        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+          <ActivityIndicator size="large" />
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -210,6 +242,28 @@ export default function App() {
                   setAppMode('MAP');
                   findNearbyPharmacies();
                 }}
+                isLoggedIn={isLoggedIn}
+                user={user}
+                setIsLoggedIn={setIsLoggedIn}
+                setUser={setUser}
+              />
+            );
+
+          case 'LOGIN':
+            return (
+              <LoginScreen
+                setAppMode={setAppMode}
+                setIsLoggedIn={setIsLoggedIn}
+                setUser={setUser}
+              />
+            );
+
+          case 'REGISTER':
+            return (
+              <RegisterScreen
+                setAppMode={setAppMode}
+                setIsLoggedIn={setIsLoggedIn}
+                setUser={setUser}
               />
             );
 
@@ -272,6 +326,7 @@ export default function App() {
               <CommunityScreen
                 setAppMode={setAppMode}
                 onOpenBoard={handleOpenBoard}
+                setWriteBoardType={setWriteBoardType}
               />
             );
 
@@ -284,39 +339,52 @@ export default function App() {
                 onBack={handleBackToCommunity}
               />
             );
-          
+
           case 'SUPPORT':
             return (
               <SupportMainScreen
-              setAppMode={setAppMode}
-              onOpenSupport={(item) => {
-                setSelectedSupportPost(item);
-                setAppMode('SUPPORT_DETAIL');
-              }}
+                setAppMode={setAppMode}
+                onOpenSupport={(item) => {
+                  setSelectedSupportPost(item);
+                  setAppMode('SUPPORT_DETAIL');
+                }}
               />
-              );
-          
-            case 'SUPPORT_DETAIL':
-              return (
-                    <SupportListScreen
-                    post={selectedSupportPost}
-                    onBack={() => setAppMode('SUPPORT')}
-                    setAppMode={setAppMode}
-                  />
-                  );
-          
-          
+            );
+
+          case 'SUPPORT_DETAIL':
+            return (
+              <SupportListScreen
+                post={selectedSupportPost}
+                onBack={() => setAppMode('SUPPORT')}
+                setAppMode={setAppMode}
+              />
+            );
+
           case 'SUPPORT_WRITE':
             return <SupportWriteScreen setAppMode={setAppMode} />;
-          
-          case 'WRITE_BOARD':
-            return <WriteBoardScreen setAppMode={setAppMode} />;
 
-          case 'LOGIN':
-            return <LoginScreen setAppMode={setAppMode} />;
+          case 'WRITE_BOARD':
+            return (
+              <WriteBoardScreen
+                setAppMode={setAppMode}
+                writeBoardType={writeBoardType}
+              />
+            );
 
           default:
-            return <HomeScreen setAppMode={setAppMode} />;
+            return (
+              <HomeScreen
+                setAppMode={setAppMode}
+                onPressMap={() => {
+                  setAppMode('MAP');
+                  findNearbyPharmacies();
+                }}
+                isLoggedIn={isLoggedIn}
+                user={user}
+                setIsLoggedIn={setIsLoggedIn}
+                setUser={setUser}
+              />
+            );
         }
       })()}
     </SafeAreaView>
