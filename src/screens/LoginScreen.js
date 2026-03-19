@@ -13,7 +13,7 @@ import * as SecureStore from 'expo-secure-store';
 import { loginWithKakao } from '../services/kakaoAuthService';
 import { styles } from '../styles/commonStyles';
 
-const API_BASE = 'https://medichubs-backend.azurewebsites.net';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://medichubs-backend.azurewebsites.net';
 
 function getErrorMessage(data, fallback = '로그인에 실패했습니다.') {
   if (!data) return fallback;

@@ -18,7 +18,14 @@
         }
       ],
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "@react-native-seoul/kakao-login",
+        {
+          "kakaoAppKey": "카카오_네이티브_앱_키_넣기",
+          "overrideKakaoSDKVersion": "2.11.0"
+        }
+      ]
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
