@@ -26,7 +26,13 @@
           "overrideKakaoSDKVersion": "2.11.0"
         }
       ],
-      "expo-speech-recognition"
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "메디가 당신의 목소리를 듣고 대답하기 위해 마이크 권한이 필요합니다.",
+          "speechRecognitionPermission": "메디가 당신의 음성을 텍스트로 변환하기 위해 음성 인식 권한이 필요합니다."
+        }
+      ]
     ],
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -36,8 +42,11 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "내 주변 당번약국을 찾기 위해 위치를 사용합니다."
-      }
+        "NSLocationWhenInUseUsageDescription": "내 주변 당번약국을 찾기 위해 위치를 사용합니다.",
+        "NSSpeechRecognitionUsageDescription": "메디가 당신의 음성을 텍스트로 변환하기 위해 음성 인식 권한이 필요합니다.",
+        "NSMicrophoneUsageDescription": "메디가 당신의 목소리를 듣고 대답하기 위해 마이크 권한이 필요합니다."
+      },
+      "bundleIdentifier": "com.medichubs.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -49,7 +58,8 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ]
     },
     "web": {
