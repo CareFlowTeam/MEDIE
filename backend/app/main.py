@@ -17,7 +17,10 @@ from app.api.auth import router as auth_router
 from app.routers import device, pills, pill_history
 from app.routers import board_router, support_router
 from app.routers.auth import router as auth_router2
+from app.routers.kakao_auth import router as kakao_auth_router
+
 from app.core.database import Base, engine
+from app.models.user import User
 
 from app.core.error_handlers import (
     validation_exception_handler,
@@ -183,7 +186,7 @@ app.include_router(board_router.router)
 app.include_router(support_router.router)
 app.include_router(auth_router)
 app.include_router(auth_router2)
-
+app.include_router(kakao_auth_router)
 
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)

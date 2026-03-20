@@ -1,57 +1,79 @@
-from fastapi import APIRouter, HTTPException
-from app.schemas.user import RegisterRequest, LoginRequest
-
-router = APIRouter()
+# auth.py
 
 
-# 예시용 가짜 DB
-fake_users = []
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.core.security import hash_password, verify_password, create_access_token
+from app.models.user import User
+from app.schemas.auth import RegisterRequest, LoginRequest, AuthResponse
+
+router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-@router.post("/register")
-async def register(data: RegisterRequest):
-    # 이메일 중복 체크
-    for user in fake_users:
-        if user["email"] == data.email:
-            raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
+@router.post("/register", response_model=AuthResponse)
+def register(data: RegisterRequest, db: Session = Depends(get_db)):
+    existing_user = db.query(User).filter(User.email == data.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
 
-    fake_users.append(
+    user = User(
+        email=data.email,
+        password_hash=hash_password(data.password),
+        nickname=data.nickname,
+        login_type="local",
+    )
+
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    access_token = create_access_token(
         {
-            "email": data.email,
-            "password": data.password,
-            "name": data.name,
+            "sub": str(user.id),
+            "email": user.email,
+            "login_type": user.login_type,
         }
     )
 
     return {
-        "success": True,
-        "message": "회원가입이 완료되었습니다.",
-        "user": {
-            "email": data.email,
-            "name": data.name,
-        },
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user,
     }
 
 
-@router.post("/login")
-async def login(data: LoginRequest):
-    user = next((u for u in fake_users if u["email"] == data.email), None)
+@router.post("/login", response_model=AuthResponse)
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.email == data.email).first()
 
     if not user:
         raise HTTPException(
             status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다."
         )
 
-    if user["password"] != data.password:
+    if user.login_type != "local":
+        raise HTTPException(
+            status_code=400,
+            detail="일반 로그인이 아닌 계정입니다. 소셜 로그인을 이용해주세요.",
+        )
+
+    if not user.password_hash or not verify_password(data.password, user.password_hash):
         raise HTTPException(
             status_code=401, detail="이메일 또는 비밀번호가 올바르지 않습니다."
         )
 
+    access_token = create_access_token(
+        {
+            "sub": str(user.id),
+            "email": user.email,
+            "login_type": user.login_type,
+        }
+    )
+
     return {
-        "success": True,
-        "message": "로그인되었습니다.",
-        "user": {
-            "email": user["email"],
-            "name": user["name"],
-        },
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": user,
     }

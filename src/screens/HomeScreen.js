@@ -12,6 +12,8 @@ export default function HomeScreen({
   setIsLoggedIn,
   setUser,
 }) {
+  const displayName = user?.nickname || user?.name || '사용자';
+
   const handleLogout = async () => {
     Alert.alert('로그아웃', '로그아웃 하시겠습니까?', [
       { text: '취소', style: 'cancel' },
@@ -22,7 +24,9 @@ export default function HomeScreen({
           await SecureStore.deleteItemAsync('access_token');
           await SecureStore.deleteItemAsync('user_id');
           await SecureStore.deleteItemAsync('user_name');
+          await SecureStore.deleteItemAsync('user_nickname');
           await SecureStore.deleteItemAsync('user_email');
+          await SecureStore.deleteItemAsync('login_type');
 
           setIsLoggedIn(false);
           setUser(null);
@@ -83,7 +87,7 @@ export default function HomeScreen({
                   marginRight: 10,
                 }}
               >
-                {user?.name || '사용자'}님
+                {displayName}님
               </Text>
 
               <TouchableOpacity
@@ -157,15 +161,28 @@ export default function HomeScreen({
               key={item.id}
               style={styles.menuItem}
               onPress={() => {
-                setAppMode(item.id);
-
                 if (item.id === 'MAP') {
                   onPressMap?.();
+                  return;
                 }
+                setAppMode(item.id);
               }}
             >
               <Text style={styles.menuIcon}>{item.icon}</Text>
-              <Text style={styles.menuLabel}>{item.label}</Text>
+              <Text
+                style={[
+                  styles.menuLabel,
+                  {
+                    color: '#333',
+                    fontSize: 14,
+                    fontWeight: '700',
+                    marginTop: 8,
+                    textAlign: 'center',
+                  },
+                ]}
+              >
+                {item.label}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
