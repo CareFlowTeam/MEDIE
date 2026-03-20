@@ -78,16 +78,16 @@ eas build -p android --profile preview --local
 eas build -p android --profile preview --local
 eas build -p android --clear-cache
 
-.\adb logcat -c
-.\adb kill-server
-.\adb start-server
-.\adb devices
+adb logcat -c
+adb kill-server
+adb start-server
+adb devices
 
-.\adb shell am force-stop com.anonymous.MedicLens
+adb shell am force-stop com.medichubs.app
 
-.\adb shell pidof com.anonymous.MedicLens
+adb shell pidof com.medichubs.app
 
-.\adb logcat --pid=12834
+adb logcat --pid=
 📌 이 명령의 의미
 
 -p android → 안드로이드

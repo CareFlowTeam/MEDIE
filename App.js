@@ -47,7 +47,6 @@ import usePharmacySearch from './src/hooks/usePharmacySearch';
 import useBackHandler from './src/hooks/useBackHandler';
 import useMyPills from './src/hooks/useMyPills';
 
-// agent 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 const STORAGE_KEY = 'MY_PILLS_JSON';
 
@@ -64,7 +63,6 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [isCheckingLogin, setIsCheckingLogin] = useState(true);
 
-  // 게시판 상세용 선택 게시글 상태
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedBoardTitle, setSelectedBoardTitle] = useState('자유게시판');
 
@@ -162,27 +160,36 @@ export default function App() {
 
   // 앱 시작 시 로그인 상태 로드 및 보이스 엔진 초기화
   useEffect(() => {
-    const loadLoginState = async () => {
-      try {
-        const accessToken = await SecureStore.getItemAsync('access_token');
-        const userId = await SecureStore.getItemAsync('user_id');
-        const userName = await SecureStore.getItemAsync('user_name');
-        const userEmail = await SecureStore.getItemAsync('user_email');
+  const loadLoginState = async () => {
+    try {
+      const accessToken = await SecureStore.getItemAsync('access_token');
+      const userId = await SecureStore.getItemAsync('user_id');
+      const userNickname =
+        (await SecureStore.getItemAsync('user_nickname')) ||
+        (await SecureStore.getItemAsync('user_name'));
+      const userEmail = await SecureStore.getItemAsync('user_email');
+      const loginType = await SecureStore.getItemAsync('login_type');
 
-        if (accessToken && userId && userName && userEmail) {
-          setIsLoggedIn(true);
-          setUser({
-            id: userId,
-            name: userName,
-            email: userEmail,
-          });
-        }
-      } catch (e) {
-        console.error('자동 로그인 확인 실패:', e);
-      } finally {
-        setIsCheckingLogin(false);
+      if (accessToken && userId) {
+        setIsLoggedIn(true);
+        setUser({
+          id: userId,
+          nickname: userNickname || '사용자',
+          email: userEmail || '',
+          login_type: loginType || 'local',
+        });
+      } else {
+        setIsLoggedIn(false);
+        setUser(null);
       }
-    };
+    } catch (e) {
+      console.error('자동 로그인 확인 실패:', e);
+      setIsLoggedIn(false);
+      setUser(null);
+    } finally {
+      setIsCheckingLogin(false);
+    }
+  };
 
     loadLoginState();
 
@@ -215,6 +222,40 @@ export default function App() {
     deletePill,
   } = useMyPills({ STORAGE_KEY });
 
+  const askMedie = async (userText) => {
+    try {
+      console.log('📡 전송 데이터:', { userText, appMode });
+
+      const response = await fetch(`${API_BASE_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_input: userText || '안녕',
+          message: userText || '안녕',
+          current_mode: appMode || 'HOME',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log('❌ 서버가 보낸 진짜 메시지:', errorText);
+        throw new Error(errorText);
+      }
+
+      const data = await response.json();
+      console.log('🐶 메디 응답 성공:', data);
+
+      if (data.command === 'MOVE_SCREEN' && data.target) {
+        setAppMode(data.target);
+      }
+
+      Alert.alert('🐶 메디의 답변', data.reply || '대답을 준비하지 못했어요 멍!');
+    } catch (e) {
+      console.log('연결 실패:', e.message);
+      Alert.alert('연결 오류', e.message);
+    }
+  };
+
   const goAlarmFromPill = async (pillId) => {
     await ensurePillSchedule(pillId);
     setAppMode('ALARM');
@@ -223,11 +264,16 @@ export default function App() {
   const registerPillFromAiResponse = useCallback(
     async (aiResponse) => {
       const lines = aiResponse.split('\n');
-      const pillName = lines.find((l) => l.includes('알약 이름'))?.replace('💊 알약 이름: ', '') || '알 수 없음';
-      const confidence = lines.find((l) => l.includes('신뢰도'))?.replace('신뢰도: ', '').replace('%', '') || '0';
+      const pillName =
+        lines.find((l) => l.includes('알약 이름'))?.replace('💊 알약 이름: ', '') || '알 수 없음';
+      const confidence =
+        lines.find((l) => l.includes('신뢰도'))?.replace('신뢰도: ', '').replace('%', '') || '0';
       const usageIndex = lines.findIndex((l) => l.includes('📌 복용 목적'));
       const warningIndex = lines.findIndex((l) => l.includes('⚠️ 주의사항'));
-      const usage = usageIndex >= 0 && warningIndex >= 0 ? lines.slice(usageIndex + 1, warningIndex).join('\n') : '';
+      const usage =
+        usageIndex >= 0 && warningIndex >= 0
+          ? lines.slice(usageIndex + 1, warningIndex).join('\n')
+          : '';
       const warning = warningIndex >= 0 ? lines.slice(warningIndex + 1).join('\n') : '';
 
       const newPill = {
@@ -236,13 +282,16 @@ export default function App() {
         usage,
         warning,
         confidence,
-        schedules: [{ time: '08:00', notificationId: null, enabled: true, takenToday: false }],
+        schedules: [
+          { time: '08:00', notificationId: null, enabled: true, takenToday: false },
+        ],
         alarmEnabled: false,
         notificationId: null,
         createdAt: Date.now(),
       };
 
       const updated = [newPill, ...(myPills ?? [])];
+
       try {
         await saveMyPills(updated);
       } catch (e) {
@@ -256,8 +305,8 @@ export default function App() {
           text: '확인',
           onPress: () => {
             setAppMode('MY_PILL');
-            askMedie("방금 새로운 약을 내 복용약에 등록했어! 나 잘했지?");
-          }
+            askMedie('방금 새로운 약을 내 복용약에 등록했어! 나 잘했지?');
+          },
         },
       ]);
     },
