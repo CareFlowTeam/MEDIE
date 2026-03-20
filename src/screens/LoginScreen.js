@@ -8,7 +8,53 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { loginWithEmail, loginWithKakao } from '../services/authService';
+import * as SecureStore from 'expo-secure-store';
+import { loginWithKakao } from '../services/kakaoAuthService';
+import { styles } from '../styles/commonStyles';
+
+const API_BASE = process.env.EXPO_PUBLIC_API_URL || 'https://medichubs-backend.azurewebsites.net';
+
+function getErrorMessage(data, fallback = '로그인에 실패했습니다.') {
+  if (!data) return fallback;
+
+  if (typeof data === 'string') {
+    return data;
+  }
+
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message;
+  }
+
+  if (typeof data?.detail === 'string' && data.detail.trim()) {
+    return data.detail;
+  }
+
+  if (Array.isArray(data?.errors) && data.errors.length > 0) {
+    return data.errors.join('\n');
+  }
+
+  if (Array.isArray(data?.detail) && data.detail.length > 0) {
+    return data.detail
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (typeof item?.msg === 'string') return item.msg;
+        return null;
+      })
+      .filter(Boolean)
+      .join('\n');
+  }
+
+  if (typeof data?.error === 'string' && data.error.trim()) {
+    return data.error;
+  }
+
+  return fallback;
+}
+
+function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
+}
 
 export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
   const [email, setEmail] = useState('');
