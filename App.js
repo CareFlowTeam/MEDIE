@@ -15,15 +15,12 @@ import * as SecureStore from 'expo-secure-store';
 import { initNotifications } from './src/services/notificationInit';
 import * as Notifications from 'expo-notifications';
 
-// 🎙️ 보이스 라이브러리
-import * as Speech from 'expo-speech';
-import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
-
 /* styles */
 import { styles } from './src/styles/commonStyles';
 
 /* components */
 import HomeFloatingButton from './src/components/HomeFloatingButton';
+import { MedieChatView } from './src/components/MedieChatView'; // 분리된 메디 컴포넌트
 
 /* screens */
 import StartScreen from './src/screens/StartScreen';
@@ -49,8 +46,6 @@ import usePharmacySearch from './src/hooks/usePharmacySearch';
 import useBackHandler from './src/hooks/useBackHandler';
 import useMyPills from './src/hooks/useMyPills';
 
-// agent 
-const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 const STORAGE_KEY = 'MY_PILLS_JSON';
 
 export default function App() {
@@ -59,109 +54,14 @@ export default function App() {
   const [selectedSupportPost, setSelectedSupportPost] = useState(null);
   const [writeBoardType, setWriteBoardType] = useState('free');
 
-  // [추가] 보이스 및 확인 UI 관련 상태
-  const [isListening, setIsListening] = useState(false);
-  const [showConfirmButtons, setShowConfirmButtons] = useState(false);
-
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [user, setUser] = useState(null);
   const [isCheckingLogin, setIsCheckingLogin] = useState(true);
 
-  // 게시판 상세용 선택 게시글 상태
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedBoardTitle, setSelectedBoardTitle] = useState('자유게시판');
 
-  // 🎙️ 보이스 엔진 핵심 로직
-  /** 🔊 메디의 목소리 (TTS) */
-  const speakMedie = (text) => {
-    Speech.speak(text, {
-      language: 'ko-KR',
-      pitch: 1.1,
-      rate: 1.0,
-    });
-  };
-
-  /** 🎙️ 음성 인식 시작 (상시 대기 모드) */
-  const startContinuousListening = async () => {
-    const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-    if (!result.granted) {
-      console.log("❌ 마이크 권한 거부됨");
-      return;
-    }
-    setIsListening(true);
-    ExpoSpeechRecognitionModule.start({
-      lang: "ko-KR",
-      interimResults: true,
-      continuous: true,
-    });
-  };
-
-  /** 음성 인식 이벤트 처리 (호출어 감지) */
-  useSpeechRecognitionEvent("result", (event) => {
-    const transcript = event.results[0]?.transcript;
-    if (transcript.includes("메디야") || transcript.includes("매디야")) {
-      console.log("🐶 메디 호출 감지됨:", transcript);
-      const cleanText = transcript.replace(/메디야|매디야/g, "").trim();
-      if (cleanText.length > 0) {
-        askMedie(cleanText);
-      } else {
-        speakMedie("네, 지현님! 말씀하세요 멍!");
-      }
-    }
-  });
-
-  /** 🤖 매디 클라우드 통신 함수 (Human-in-the-Loop 반영) */
-  const askMedie = async (userText) => {
-    try {
-      console.log("📡 전송 데이터:", { userText, appMode });
-
-      const response = await fetch(`${API_BASE_URL}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_input: userText || "안녕",
-          message: userText || "안녕",
-          current_mode: appMode || "HOME"
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText);
-      }
-
-      const data = await response.json();
-      console.log("🐶 메디 응답 성공:", data);
-
-      // 🔊 목소리로 응답
-      speakMedie(data.reply || "대답을 준비하지 못했어요 멍!");
-
-      // ✨ [추가] 확인 버튼 노출 여부 결정
-      if (data.show_confirmation) {
-        setShowConfirmButtons(true);
-      }
-
-      // 화면 이동 명령 처리
-      if (data.command === "MOVE_SCREEN" && data.target) {
-        setAppMode(data.target);
-      }
-
-    } catch (e) {
-      console.log("연결 실패:", e.message);
-      Alert.alert("연결 오류", "메디 서버와 대화할 수 없어요 멍.");
-    }
-  };
-
-  /** ✅ 확인 버튼 핸들러 */
-  const handleConfirm = (isSuccess) => {
-    setShowConfirmButtons(false);
-    if (isSuccess) {
-      askMedie("응, 방금 먹었어!");
-    } else {
-      speakMedie("앗, 그렇군요! 조심할게요, 멍!");
-    }
-  };
-
+  // --- 게시판 핸들러 ---
   const handleOpenBoard = (post, boardTitle = '자유게시판') => {
     setSelectedPost(post);
     setSelectedBoardTitle(boardTitle);
@@ -172,9 +72,9 @@ export default function App() {
     setAppMode('COMMUNITY');
   };
 
-  // 앱 시작 시 로그인 상태 로드 및 보이스 엔진 초기화
+  // --- 초기화 로직 (로그인 및 알림) ---
   useEffect(() => {
-    const loadLoginState = async () => {
+    const loadInitialState = async () => {
       try {
         const accessToken = await SecureStore.getItemAsync('access_token');
         const userId = await SecureStore.getItemAsync('user_id');
@@ -185,27 +85,21 @@ export default function App() {
           setIsLoggedIn(true);
           setUser({ id: userId, name: userName, email: userEmail });
         }
+
+        const { status } = await initNotifications();
+        console.log('🔔 알림 권한:', status);
+        await Notifications.cancelAllScheduledNotificationsAsync();
       } catch (e) {
-        console.error('자동 로그인 확인 실패:', e);
+        console.error('초기 설정 실패:', e);
       } finally {
         setIsCheckingLogin(false);
       }
     };
 
-    loadLoginState();
-    startContinuousListening();
-    return () => ExpoSpeechRecognitionModule.stop();
+    loadInitialState();
   }, []);
 
-  // 알림 초기화
-  useEffect(() => {
-    (async () => {
-      const { status } = await initNotifications();
-      console.log('🔔 notification permission:', status);
-      await Notifications.cancelAllScheduledNotificationsAsync();
-    })();
-  }, []);
-
+  // --- 커스텀 훅 연결 ---
   const {
     myPills,
     saveMyPills,
@@ -221,7 +115,7 @@ export default function App() {
     setAppMode('ALARM');
   };
 
-
+  // --- AI 약 등록 로직 ---
   const registerPillFromAiResponse = useCallback(
     async (aiResponse) => {
       const lines = aiResponse.split('\n');
@@ -258,7 +152,6 @@ export default function App() {
           text: '확인',
           onPress: () => {
             setAppMode('MY_PILL');
-            askMedie("방금 새로운 약을 내 복용약에 등록했어! 나 잘했지?");
           }
         },
       ]);
@@ -290,16 +183,15 @@ export default function App() {
 
   useBackHandler({ appMode, setAppMode, showResult, setShowResult });
 
+  // --- 렌더링 조건 처리 ---
   if (!isStarted) {
     return <StartScreen onStart={() => { setIsStarted(true); setAppMode('HOME'); }} />;
   }
 
   if (isCheckingLogin) {
     return (
-      <SafeAreaView style={{ flex: 1 }}>
-        <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" />
-        </View>
+      <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color="#4A90E2" />
       </SafeAreaView>
     );
   }
@@ -333,80 +225,10 @@ export default function App() {
           })()}
         </View>
 
-        {/* [추가] 복용 확인 UI Overlay */}
-        {showConfirmButtons && (
-          <View style={localStyles.confirmOverlay}>
-            <Text style={localStyles.confirmText}>주인님, 방금 약 드셨나요? 멍!</Text>
-            <View style={localStyles.confirmBtnRow}>
-              <TouchableOpacity style={[localStyles.actionBtn, localStyles.yesBtn]} onPress={() => handleConfirm(true)}>
-                <Text style={localStyles.btnText}>응, 먹었어! 💊</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[localStyles.actionBtn, localStyles.noBtn]} onPress={() => handleConfirm(false)}>
-                <Text style={localStyles.btnText}>아니요</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* 🐶 매디 상호작용 버튼 */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          style={localStyles.medieButton}
-          onPress={() => askMedie("안녕 매디!")}
-        >
-          <Image source={require('./assets/medie-dog.png')} style={localStyles.medieIcon} />
-          {isListening && <View style={localStyles.listeningDot} />}
-        </TouchableOpacity>
+        {/* 🐶 메디 통합 레이어 (음성 인식 + 채팅 UI + 확인 버튼) */}
+        <MedieChatView appMode={appMode} setAppMode={setAppMode} />
 
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
-
-const localStyles = StyleSheet.create({
-  medieButton: {
-    position: 'absolute',
-    bottom: 110,
-    right: 20,
-    backgroundColor: '#fff',
-    borderRadius: 40,
-    padding: 10,
-    elevation: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.2,
-    shadowRadius: 5,
-  },
-  medieIcon: { width: 60, height: 60, resizeMode: 'contain' },
-  listeningDot: {
-    position: 'absolute',
-    top: 5,
-    right: 5,
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FF7F50',
-    borderWidth: 2,
-    borderColor: '#fff',
-  },
-  confirmOverlay: {
-    position: 'absolute',
-    bottom: 100, // 매디 버튼 위에 뜨도록 조정
-    left: 20,
-    right: 20,
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    elevation: 15,
-    shadowColor: "#000",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    borderWidth: 1,
-    borderColor: '#eee',
-  },
-  confirmText: { fontSize: 18, fontWeight: 'bold', textAlign: 'center', marginBottom: 15, color: '#333' },
-  confirmBtnRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  actionBtn: { flex: 1, padding: 15, borderRadius: 12, alignItems: 'center', marginHorizontal: 5 },
-  yesBtn: { backgroundColor: '#4CAF50' },
-  noBtn: { backgroundColor: '#FF5252' },
-  btnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
-});
