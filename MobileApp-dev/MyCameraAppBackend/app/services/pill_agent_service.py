@@ -1,5 +1,5 @@
-from app.services.custom_vision_service import predict_image
-from app.services.gpt_service import generate_pill_info_from_tag
+from services.custom_vision_service import predict_image
+from services.gpt_service import generate_pill_info_from_tag
 
 
 async def analyze_pill(file):
@@ -35,7 +35,7 @@ async def analyze_pill(file):
         }
 
     # ✅ GPT 호출 (완전 위임)
-    analysis = generate_pill_info_from_tag(top["tagName"])
+    analysis = await generate_pill_info_from_tag(top["tagName"])
 
     result = {
         "success": True,

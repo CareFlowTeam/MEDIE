@@ -20,3 +20,16 @@ export async function analyzePill(imageUri: string) {
 
   return res.json();
 }
+
+export async function syncPills(encryptedData: string, jwt: string) {
+  return fetch("/pills/sync", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
+    body: JSON.stringify({
+      encrypted_data: encryptedData,
+    }),
+  });
+}
