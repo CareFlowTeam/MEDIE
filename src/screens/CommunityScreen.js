@@ -377,6 +377,7 @@ export default function CommunityScreen({
                 tintColor={COLORS.primaryDark}
               />
             }
+            ListHeaderComponent={<View style={{ borderTopWidth: 1, borderColor: COLORS.greenLine }} />}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Text style={styles.emptyText}>등록된 게시글이 없습니다.</Text>
@@ -490,6 +491,24 @@ export default function CommunityScreen({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleResetSearch}
+              style={{
+                marginTop: 12,
+                alignSelf: 'flex-end',
+              }}
+            >
+              <Text
+                style={{
+                  color: COLORS.subText,
+                  fontWeight: '700',
+                }}
+              >
+                전체 목록으로
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

@@ -109,6 +109,58 @@ export const styles = StyleSheet.create({
     paddingVertical: 16,
     backgroundColor: COLORS.PRIMARY,
     borderRadius: 18,
+  },
+  footerContainer: {
+  marginTop: 18,
+  paddingTop: 10,
+  paddingBottom: 10,
+  alignItems: 'center',
+},
+  betaText: {
+  fontSize: 12,
+  color: '#888',
+  marginBottom: 12,
+},
+  backBtnBottom: {
+    width: 40,
+    height: 80,
+    justifyContent: 'center',
+    alignItems: 'flex-start',},
+  backGradient: {
+  paddingVertical: 16,
+  paddingHorizontal: 18,
+  borderRadius: 18,
+
+  // 가운데 정렬
+  alignItems: 'center',
+  justifyContent: 'center',
+
+  // 그림자(ios)
+  shadowColor: '#000',
+  shadowOffset: { width: 0, height: 4 },
+  shadowOpacity: 0.18,
+  shadowRadius: 6,
+
+  // 그림자(android)
+  elevation: 4,
+},
+  backBtnTextBold: {
+    fontSize: 65,
+    color: '#6EAF71',
+    lineHeight: 34,
+    fontWeight: '300',
+    marginBottom: 20,
+},
+
+  backBtn: { position: 'absolute', top: 60, left: 20 },
+  backBtnText: { color: '#fff', fontSize: 16 },
+  bottomOverlay: { position: 'absolute', bottom: 80, width: '100%', alignItems: 'center' },
+  premiumScanBtn: { 
+    backgroundColor: '#FF7F50', 
+    paddingHorizontal: 60, 
+    paddingVertical: 20, 
+    borderRadius: 40,
+    minWidth: 200,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 36,
