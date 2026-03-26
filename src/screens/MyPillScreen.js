@@ -29,7 +29,6 @@ export default function MyPillScreen({
   setAppMode,
   setSelectedPill,
 }) {
-  const [selectedPill, setSelectedPill] = useState(null);
 
   const displayPills = useMemo(() => {
     return (myPills || []).map((pill, index) => {

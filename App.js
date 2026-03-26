@@ -485,7 +485,6 @@ export default function App() {
                     await SecureStore.deleteItemAsync('userId');
                     await SecureStore.deleteItemAsync('userName');
                     await SecureStore.deleteItemAsync('userEmail');
-
                     setIsLoggedIn(false);
                     setUser(null);
                     setAppMode('LOGIN');
@@ -520,6 +519,7 @@ export default function App() {
         setAppMode={setAppMode}
         onCompleteNextDose={completeNextDose}
         onChangeAlarmTime={changePillAlarmTime}
+        onToggleAlarm={togglePillAlarm}
         myPills={myPills}
       />
     </SafeAreaView>
