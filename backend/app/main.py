@@ -12,6 +12,8 @@ from app.api import drug
 from app.api import analyze
 from app.api import pharmacy
 from app.api.auth import router as auth_router
+from app.api.medication_logs import router as medication_logs_router
+from app.api.user import router as user_router
 
 
 from app.routers import device, pills, pill_history
@@ -19,6 +21,7 @@ from app.routers import board_router, support_router
 from app.routers.auth import router as auth_router2
 from app.routers.kakao_auth import router as kakao_auth_router
 from app.routers.arduino import router as arduino_router
+from app.routers import weight_logs
 
 
 from app.core.database import Base, engine
@@ -195,6 +198,10 @@ app.include_router(auth_router)
 app.include_router(auth_router2)
 app.include_router(kakao_auth_router)
 app.include_router(arduino_router)
+app.include_router(medication_logs_router)
+app.include_router(user_router)
+app.include_router(weight_logs.router)
+
 
 app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(HTTPException, http_exception_handler)

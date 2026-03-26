@@ -31,7 +31,7 @@ const COLORS = {
   chipActive: '#A9D18E',
   tabBg: '#EAF4E3',
 };
-const DEV_MOCK_COMMUNITY = true;
+const DEV_MOCK_COMMUNITY = false;  // true → false
 
 const MOCK_POSTS = [
   {
@@ -108,6 +108,8 @@ export default function CommunityScreen({
       setIsRefreshing(false);
       return;
     }
+
+
 
     try {
       setIsLoading(true);
@@ -194,6 +196,7 @@ export default function CommunityScreen({
     try {
       setIsSearching(true);
 
+
       const url =
         `${BOARD_API_BASE}/boards/search?q=${encodeURIComponent(searchKeyword.trim())}` +
         `&board_type=${encodeURIComponent(normalizedBoardType)}`;
@@ -222,6 +225,12 @@ export default function CommunityScreen({
       setIsSearching(false);
     }
   };
+
+  const handleResetSearch = useCallback(() => {
+    setSearchKeyword('');
+    setIsSearchOpen(false);
+    fetchBoards();
+  }, [fetchBoards]);
 
   const renderPostItem = ({ item }) => (
     <TouchableOpacity
@@ -377,6 +386,7 @@ export default function CommunityScreen({
                 tintColor={COLORS.primaryDark}
               />
             }
+            ListHeaderComponent={<View style={{ borderTopWidth: 1, borderColor: COLORS.greenLine }} />}
             ListEmptyComponent={
               <View style={styles.emptyWrap}>
                 <Text style={styles.emptyText}>등록된 게시글이 없습니다.</Text>
@@ -490,6 +500,24 @@ export default function CommunityScreen({
                 </Text>
               </TouchableOpacity>
             </View>
+
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleResetSearch}
+              style={{
+                marginTop: 12,
+                alignSelf: 'flex-end',
+              }}
+            >
+              <Text
+                style={{
+                  color: COLORS.subText,
+                  fontWeight: '700',
+                }}
+              >
+                전체 목록으로
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>

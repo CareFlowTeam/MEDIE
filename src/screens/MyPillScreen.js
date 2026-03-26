@@ -21,13 +21,14 @@ const COLORS = {
   danger: '#D32F2F',
 };
 
+
 export default function MyPillScreen({
   myPills = [],
   onToggleAlarm,
   onDeletePill,
   setAppMode,
+  setSelectedPill,
 }) {
-  const [selectedPill, setSelectedPill] = useState(null);
 
   const displayPills = useMemo(() => {
     return (myPills || []).map((pill, index) => {
