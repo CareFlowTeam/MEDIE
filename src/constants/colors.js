@@ -1,21 +1,19 @@
-// constants/colors.js
-
 export const COLORS = {
-  PRIMARY: '#FF7F50',
-  PRIMARY_DARK: '#FF4500',
+  primary: "#065809",
+  primaryDark: "#006E07",
+  secondary: "#67A369",
 
-  BACKGROUND: '#F3E5F5',
-  BACKGROUND_LIGHT: '#E8EAF6',
+  background: "#FFFFFF",
+  gradientStart: "#E8F5E9",
+  gradientEnd: "#FFFDE7",
 
-  TEXT_MAIN: '#333',
-  TEXT_SUB: '#666',
-  TEXT_MUTED: '#888',
+  bottomBar: "#FFFDE7",
+  cardWarm: "#FFFDE7",
 
-  WHITE: '#FFFFFF',
-  BLACK: '#000000',
+  textPrimary: "#065809",
+  textWhite: "#FFFFFF",
+  textMuted: "#8C8C8C",
 
-  SUCCESS: '#4CAF50',
-  WARNING: '#D32F2F',
-
-  BORDER: '#BDBDBD',
+  borderPrimary: "#006E07",
+  borderSoft: "#67A369",
 };

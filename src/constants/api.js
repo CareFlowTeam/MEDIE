@@ -1,7 +1,7 @@
 // constants/api.js
 
 export const API_BASE_URL =
-  'https://20.106.40.121';
+  'http://20.106.40.121';
 
 export const PILL_ANALYZE_API =
   `${API_BASE_URL}/pill/analyze`;

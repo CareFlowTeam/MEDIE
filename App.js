@@ -9,6 +9,7 @@ import {
   Platform
 } from 'react-native';
 import * as SecureStore from 'expo-secure-store';
+import { ExpoSpeechRecognitionModule } from "expo-speech-recognition";
 import { initNotifications } from './src/services/notificationInit';
 import * as Notifications from 'expo-notifications';
 import { API_BASE } from './src/api/api';
@@ -37,6 +38,8 @@ import WriteBoardScreen from './src/screens/WriteBoardScreen';
 import SupportMainScreen from './src/screens/SupportMainScreen';
 import SupportListScreen from './src/screens/SupportListScreen';
 import SupportWriteScreen from './src/screens/SupportWriteScreen';
+import MyPageScreen from './src/screens/MyPageScreen';
+import EditPostScreen from './src/screens/EditPostScreen';
 
 /* hooks */
 import useCameraScan from './src/hooks/useCameraScan';
@@ -46,9 +49,10 @@ import useMyPills from './src/hooks/useMyPills';
 
 const STORAGE_KEY = 'MY_PILLS_JSON';
 
+
 export default function App() {
   const [isStarted, setIsStarted] = useState(false);
-  const [appMode, setAppMode] = useState('HOME');
+  const [appMode, setAppMode] = useState('LOGIN');
   const [selectedSupportPost, setSelectedSupportPost] = useState(null);
   const [writeBoardType, setWriteBoardType] = useState('free');
 
@@ -58,6 +62,7 @@ export default function App() {
 
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedBoardTitle, setSelectedBoardTitle] = useState('자유게시판');
+  const [pillHistory, setPillHistory] = useState([]);
 
   const handleOpenBoard = (post, boardTitle = '자유게시판') => {
     setSelectedPost(post);
@@ -70,32 +75,44 @@ export default function App() {
   };
 
   useEffect(() => {
-    const loadInitialState = async () => {
+    const setup = async () => {
       try {
-        const accessToken = await SecureStore.getItemAsync('access_token');
-        const userId = await SecureStore.getItemAsync('user_id');
-        const userName = await SecureStore.getItemAsync('user_name');
-        const userEmail = await SecureStore.getItemAsync('user_email');
+        setIsCheckingLogin(true);
 
-        if (accessToken && userId && userName && userEmail) {
+        // 1. 알림 권한 설정
+        console.log("🔔 알림 권한 설정 중...");
+        await initNotifications();
+
+        // 2. 마이크 권한 요청
+        console.log("🎤 마이크 권한 요청 중...");
+        const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
+        console.log("🎤 마이크 권한 최종 상태:", result.granted);
+
+        // 3. 로그인 상태 체크 (SecureStore에서 가져오기)
+        const accessToken = await SecureStore.getItemAsync('accessToken');
+        const userId = await SecureStore.getItemAsync('userId');
+        const userName = await SecureStore.getItemAsync('userName');
+        const userEmail = await SecureStore.getItemAsync('userEmail');
+
+        if (accessToken && userId) {
           setIsLoggedIn(true);
           setUser({ id: userId, name: userName, email: userEmail });
+          setAppMode('HOME');
+        } else {
+          setIsLoggedIn(false);
+          setAppMode('LOGIN');
         }
-
-        const { status } = await initNotifications();
-        console.log('🔔 알림 권한:', status);
-        await Notifications.cancelAllScheduledNotificationsAsync();
-      } catch (e) {
-        console.error('초기 설정 실패:', e);
+      } catch (error) {
+        console.error("⚠️ 초기 설정 중 오류 발생:", error);
+        setAppMode('LOGIN'); // 에러 시 안전하게 로그인으로 이동
       } finally {
         setIsCheckingLogin(false);
       }
     };
 
-    loadInitialState();
+    setup();
   }, []);
 
-  // 테스트용 서버 확인
   useEffect(() => {
     const testServer = async () => {
       try {
@@ -119,6 +136,49 @@ export default function App() {
     deletePillAlarm,
     deletePill,
   } = useMyPills({ STORAGE_KEY });
+
+  const completeNextDose = useCallback(async () => {
+    const allSchedules = myPills.flatMap((pill) =>
+      (pill.schedules || []).map((schedule, index) => ({
+        ...schedule,
+        pillId: pill.id,
+        pillName: pill.name,
+        scheduleIndex: index,
+      }))
+    );
+
+    const next = allSchedules
+      .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
+      .find((item) => !item.takenToday);
+
+    if (!next) return;
+
+    const updated = myPills.map((pill) => {
+      if (pill.id !== next.pillId) return pill;
+      return {
+        ...pill,
+        schedules: pill.schedules.map((s, i) =>
+          i === next.scheduleIndex ? { ...s, takenToday: true } : s
+        ),
+      };
+    });
+    await saveMyPills(updated);
+
+    // 히스토리 기록 추가
+    const today = new Date();
+    const dateKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    setPillHistory((prev) => [
+      ...prev,
+      {
+        date: dateKey,
+        pillName: next.pillName,
+        label: `${next.scheduleIndex + 1}회차`,
+        time: next.time,
+        taken: true,
+      },
+    ]);
+  }, [myPills, saveMyPills]);
 
   const goAlarmFromPill = async (pillId) => {
     await ensurePillSchedule(pillId);
@@ -162,12 +222,7 @@ export default function App() {
       }
 
       Alert.alert('등록 완료', '내 복용약으로 등록되었습니다.', [
-        {
-          text: '확인',
-          onPress: () => {
-            setAppMode('MY_PILL');
-          },
-        },
+        { text: '확인', onPress: () => setAppMode('MY_PILL') },
       ]);
     },
     [myPills, saveMyPills]
@@ -197,13 +252,47 @@ export default function App() {
   useBackHandler({ appMode, setAppMode, showResult });
 
   if (!isStarted) {
-    return <StartScreen onStart={() => { setIsStarted(true); setAppMode('HOME'); }} />;
+    return (
+      <StartScreen
+        onStart={() => {
+          setIsStarted(true);
+          setAppMode(isLoggedIn ? 'HOME' : 'LOGIN');
+        }}
+        user={isLoggedIn ? user : null}
+
+      />
+    );
   }
 
   if (isCheckingLogin) {
     return (
       <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#4A90E2" />
+      </SafeAreaView>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1 }}
+        >
+          {appMode === 'REGISTER' ? (
+            <RegisterScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
+          ) : (
+            <LoginScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
+          )}
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -231,12 +320,11 @@ export default function App() {
                     user={user}
                     setIsLoggedIn={setIsLoggedIn}
                     setUser={setUser}
+                    myPills={myPills}
+                    onCompleteNextDose={completeNextDose}
                   />
                 );
-              case 'LOGIN':
-                return <LoginScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />;
-              case 'REGISTER':
-                return <RegisterScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />;
+
               case 'SCAN':
                 return (
                   <ScanScreen
@@ -251,6 +339,7 @@ export default function App() {
                     setAppMode={setAppMode}
                   />
                 );
+
               case 'MY_PILL':
                 return (
                   <MyPillScreen
@@ -260,6 +349,7 @@ export default function App() {
                     onDeletePill={deletePill}
                   />
                 );
+
               case 'MAP':
                 return (
                   <MapScreen
@@ -271,6 +361,7 @@ export default function App() {
                     openKakaoMapDetail={openKakaoMapDetail}
                   />
                 );
+
               case 'ALARM':
                 return (
                   <AlarmScreen
@@ -281,10 +372,13 @@ export default function App() {
                     deletePillAlarm={deletePillAlarm}
                   />
                 );
+
               case 'HISTORY':
-                return <HistoryScreen setAppMode={setAppMode} />;
+                return <HistoryScreen setAppMode={setAppMode} pillHistory={pillHistory} />;
+
               case 'SEARCH_PILL':
                 return <SearchPillScreen setAppMode={setAppMode} />;
+
               case 'COMMUNITY':
                 return (
                   <CommunityScreen
@@ -293,6 +387,7 @@ export default function App() {
                     setWriteBoardType={setWriteBoardType}
                   />
                 );
+
               case 'BOARD':
                 return (
                   <BoardScreen
@@ -302,6 +397,15 @@ export default function App() {
                     onBack={handleBackToCommunity}
                   />
                 );
+
+              case 'EDIT_POST':
+                return (
+                  <EditPostScreen
+                    setAppMode={setAppMode}
+                    post={selectedPost}
+                  />
+                );
+
               case 'SUPPORT':
                 return (
                   <SupportMainScreen
@@ -312,6 +416,7 @@ export default function App() {
                     }}
                   />
                 );
+
               case 'SUPPORT_DETAIL':
                 return (
                   <SupportListScreen
@@ -320,10 +425,35 @@ export default function App() {
                     setAppMode={setAppMode}
                   />
                 );
+
               case 'SUPPORT_WRITE':
                 return <SupportWriteScreen setAppMode={setAppMode} />;
+
+              case 'MY_PAGE':
+                return (
+                  <MyPageScreen
+                    user={user}
+                    myPills={myPills}
+                    pillAlarms={myPills.flatMap((pill) => pill.schedules || [])}
+                    myPosts={[]}
+                    onBack={() => setAppMode('HOME')}
+                    onNavigate={(mode) => {
+                      if (mode === 'PROFILE_EDIT') {
+                        return;
+                      }
+                      setAppMode(mode);
+                    }}
+                    onLogout={() => {
+                      setIsLoggedIn(false);
+                      setUser(null);
+                      setAppMode('LOGIN');
+                    }}
+                  />
+                );
+
               case 'WRITE_BOARD':
                 return <WriteBoardScreen setAppMode={setAppMode} writeBoardType={writeBoardType} />;
+
               default:
                 return (
                   <HomeScreen
@@ -338,7 +468,13 @@ export default function App() {
           })()}
         </View>
 
-        <MedieChatView appMode={appMode} setAppMode={setAppMode} />
+        <MedieChatView
+          appMode={appMode}
+          setAppMode={setAppMode}
+          onCompleteNextDose={completeNextDose}
+          onChangeAlarmTime={changePillAlarmTime}
+          myPills={myPills}
+        />
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
