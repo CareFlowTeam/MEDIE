@@ -40,7 +40,6 @@ const createMockPill = (pillName) => ({
 });
 
 export default function SearchPillScreen({ setAppMode, initialKeyword, onSearch }) {
-
   const apiBaseUrl = useMemo(() => 'http://20.106.40.121', []);
 
   const {
@@ -68,19 +67,25 @@ export default function SearchPillScreen({ setAppMode, initialKeyword, onSearch 
 
     if (DEV_MOCK_PILL_SEARCH) {
       setMockSearching(true);
-
       setTimeout(() => {
-        const fakeItem = createMockPill(query.trim());
+        const fakeItem = createMockPill(q.trim());
         setMockSelected(fakeItem);
         setMockSearching(false);
       }, 350);
-
       return;
     }
 
     if (!canSearch || isSearching) return;
     search();
   };
+
+  useEffect(() => {
+    if (initialKeyword) {
+      setQuery(initialKeyword);
+      handleSearch(initialKeyword);
+      if (onSearch) onSearch();
+    }
+  }, [initialKeyword]);
 
   const handleResetMock = () => {
     if (DEV_MOCK_PILL_SEARCH) {

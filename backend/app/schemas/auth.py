@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr, Field
-from typing import Optional
+from typing import Optional, List, Dict
 
 
 class RegisterRequest(BaseModel):
@@ -13,11 +13,30 @@ class LoginRequest(BaseModel):
     password: str = Field(..., min_length=4, max_length=50)
 
 
+class ConversationLogResponse(BaseModel):
+    log_id: str
+    role: str
+    message: str
+    intent: str
+    created_at: str
+
+
+class MedicationProfileResponse(BaseModel):
+    habit_strength: str
+    preferred_time_windows: Dict[str, str]
+    miss_risk_score: float
+    notes: str
+    updated_at: str
+
+
 class UserResponse(BaseModel):
-    id: int
+    id: str
     email: Optional[str] = None
-    nickname: str
-    login_type: str
+    name: str
+    created_at: str
+    pattern_change_count: int
+    medication_profile: MedicationProfileResponse
+    conversation_logs: List[ConversationLogResponse] = []
 
     class Config:
         from_attributes = True
