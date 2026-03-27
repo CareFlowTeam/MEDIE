@@ -27,6 +27,7 @@ export default function MyPillScreen({
   onToggleAlarm,
   onDeletePill,
   setAppMode,
+  selectedPill,
   setSelectedPill,
 }) {
 

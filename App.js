@@ -1,17 +1,9 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StatusBar } from 'react-native';
+import { StatusBar, View, ActivityIndicator, KeyboardAvoidingView, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import {
-  Alert,
-  View,
-  ActivityIndicator,
-  KeyboardAvoidingView,
-  Platform,
-} from 'react-native';
 import * as SecureStore from 'expo-secure-store';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { initNotifications } from './src/services/notificationInit';
-import * as Notifications from 'expo-notifications';
 import { API_BASE } from './src/api/api';
 
 /* styles */
@@ -41,6 +33,7 @@ import SupportListScreen from './src/screens/SupportListScreen';
 import SupportWriteScreen from './src/screens/SupportWriteScreen';
 import MyPageScreen from './src/screens/MyPageScreen';
 import EditPostScreen from './src/screens/EditPostScreen';
+import MedicationOnboardingScreen from './src/screens/MedicationOnboardingScreen';
 
 /* hooks */
 import useCameraScan from './src/hooks/useCameraScan';
@@ -49,10 +42,12 @@ import useBackHandler from './src/hooks/useBackHandler';
 import useMyPills from './src/hooks/useMyPills';
 
 const STORAGE_KEY = 'MY_PILLS_JSON';
+const ONBOARDING_KEY = 'HAS_SEEN_MEDICATION_ONBOARDING';
 
 export default function App() {
   const [isStarted, setIsStarted] = useState(false);
   const [appMode, setAppMode] = useState('LOGIN');
+
   const [selectedSupportPost, setSelectedSupportPost] = useState(null);
   const [writeBoardType, setWriteBoardType] = useState('free');
 
@@ -62,11 +57,13 @@ export default function App() {
 
   const [selectedPost, setSelectedPost] = useState(null);
   const [selectedBoardTitle, setSelectedBoardTitle] = useState('자유게시판');
+
   const [pillHistory, setPillHistory] = useState([]);
   const [searchKeyword, setSearchKeyword] = useState('');
   const [voicePostDraft, setVoicePostDraft] = useState(null);
 
   const [selectedPill, setSelectedPill] = useState(null);
+  const [hasSeenMedicationOnboarding, setHasSeenMedicationOnboarding] = useState(false);
 
   const handleOpenBoard = (post, boardTitle = '자유게시판') => {
     setSelectedPost(post);
@@ -78,33 +75,51 @@ export default function App() {
     setAppMode('COMMUNITY');
   };
 
+  const handleMedicationOnboardingDone = async () => {
+    try {
+      await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
+      setHasSeenMedicationOnboarding(true);
+    } catch (error) {
+      console.error('온보딩 저장 실패:', error);
+    }
+  };
+
   useEffect(() => {
     const setup = async () => {
       try {
         setIsCheckingLogin(true);
 
-        console.log('🔔 알림 권한 설정 중.');
+        console.log('🔔 알림 권한 설정 중');
         await initNotifications();
 
-        console.log('🎤 마이크 권한 요청 중.');
+        console.log('🎤 마이크 권한 요청 중');
         const result = await ExpoSpeechRecognitionModule.requestPermissionsAsync();
-        console.log('🎤 마이크 권한 최종 상태:', result.granted);
+        console.log('🎤 마이크 권한 최종 상태:', result?.granted);
 
         const accessToken = await SecureStore.getItemAsync('accessToken');
         const userId = await SecureStore.getItemAsync('userId');
         const userName = await SecureStore.getItemAsync('userName');
         const userEmail = await SecureStore.getItemAsync('userEmail');
+        const seenOnboarding = await SecureStore.getItemAsync(ONBOARDING_KEY);
+
+        setHasSeenMedicationOnboarding(seenOnboarding === 'true');
 
         if (accessToken && userId) {
           setIsLoggedIn(true);
-          setUser({ id: userId, name: userName, email: userEmail });
-          setAppMode('HOME');
+          setUser({
+            id: userId,
+            name: userName || '',
+            email: userEmail || '',
+          });
         } else {
           setIsLoggedIn(false);
+          setUser(null);
           setAppMode('LOGIN');
         }
       } catch (error) {
         console.error('⚠️ 초기 설정 중 오류 발생:', error);
+        setIsLoggedIn(false);
+        setUser(null);
         setAppMode('LOGIN');
       } finally {
         setIsCheckingLogin(false);
@@ -196,15 +211,30 @@ export default function App() {
   };
 
   const registerPillFromAiResponse = useCallback(
-    async (aiResponse) => {
-      const lines = aiResponse.split('\n');
+    async (aiText) => {
+      const responseText =
+        typeof aiText === 'string'
+          ? aiText
+          : aiText?.rawText || '';
 
       const pillName =
-        lines.find((l) => l.includes('알약 이름'))?.replace('💊 알약 이름: ', '') || '알 수 없음';
+        (typeof aiText === 'object' && aiText?.pillName) ||
+        responseText
+          .split('\n')
+          .find((l) => l.includes('알약 이름'))
+          ?.replace('💊 알약 이름: ', '') ||
+        '알 수 없음';
 
       const confidence =
-        lines.find((l) => l.includes('신뢰도'))?.replace('신뢰도: ', '').replace('%', '') || '0';
+        (typeof aiText === 'object' && String(aiText?.confidence || '0')) ||
+        responseText
+          .split('\n')
+          .find((l) => l.includes('신뢰도'))
+          ?.replace('신뢰도: ', '')
+          .replace('%', '') ||
+        '0';
 
+      const lines = responseText.split('\n');
       const usageIndex = lines.findIndex((l) => l.includes('📌 복용 목적'));
       const warningIndex = lines.findIndex((l) => l.includes('⚠️ 주의사항'));
 
@@ -213,7 +243,37 @@ export default function App() {
           ? lines.slice(usageIndex + 1, warningIndex).join('\n')
           : '';
 
-      const warning = warningIndex >= 0 ? lines.slice(warningIndex + 1).join('\n') : '';
+      const warning =
+        warningIndex >= 0 ? lines.slice(warningIndex + 1).join('\n') : '';
+
+      const initialSchedules =
+        typeof aiText === 'object' &&
+          Array.isArray(aiText?.schedule) &&
+          aiText.schedule.length > 0
+          ? aiText.schedule.map((timeLabel) => {
+            const defaultTimeMap = {
+              아침: '08:00',
+              점심: '12:30',
+              저녁: '19:00',
+            };
+
+            return {
+              label: timeLabel,
+              time: defaultTimeMap[timeLabel] || '08:00',
+              notificationId: null,
+              enabled: true,
+              takenToday: false,
+            };
+          })
+          : [
+            {
+              label: '아침',
+              time: '08:00',
+              notificationId: null,
+              enabled: true,
+              takenToday: false,
+            },
+          ];
 
       const newPill = {
         id: Date.now().toString(),
@@ -221,14 +281,7 @@ export default function App() {
         usage,
         warning,
         confidence,
-        schedules: [
-          {
-            time: '08:00',
-            notificationId: null,
-            enabled: true,
-            takenToday: false,
-          },
-        ],
+        schedules: initialSchedules,
         alarmEnabled: false,
         notificationId: null,
         createdAt: Date.now(),
@@ -240,13 +293,10 @@ export default function App() {
         await saveMyPills(updated);
       } catch (e) {
         console.error('❌ saveMyPills 실패', e);
-        Alert.alert('저장 오류', '내 복용약 저장에 실패했습니다.');
         return;
       }
 
-      Alert.alert('등록 완료', '내 복용약으로 등록되었습니다.', [
-        { text: '확인', onPress: () => setAppMode('MY_PILL') },
-      ]);
+      setAppMode('MY_PILL');
     },
     [myPills, saveMyPills]
   );
@@ -274,23 +324,27 @@ export default function App() {
 
   useBackHandler({ appMode, setAppMode, showResult });
 
-  if (!isStarted) {
-    return (
-      <StartScreen
-        onStart={() => {
-          setIsStarted(true);
-          setAppMode(isLoggedIn ? 'HOME' : 'LOGIN');
-        }}
-        user={isLoggedIn ? user : null}
-      />
-    );
-  }
-
   if (isCheckingLogin) {
     return (
       <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <ActivityIndicator size="large" color="#4A90E2" />
       </SafeAreaView>
+    );
+  }
+
+  if (!isStarted) {
+    return (
+      <StartScreen
+        onStart={() => {
+          setIsStarted(true);
+          setAppMode(
+            isLoggedIn
+              ? (hasSeenMedicationOnboarding ? 'HOME' : 'MEDICATION_ONBOARDING')
+              : 'LOGIN'
+          );
+        }}
+        user={isLoggedIn ? user : null}
+      />
     );
   }
 
@@ -355,6 +409,15 @@ export default function App() {
                 />
               );
 
+            case 'MEDICATION_ONBOARDING':
+              return (
+                <MedicationOnboardingScreen
+                  setAppMode={setAppMode}
+                  onSelectYes={handleMedicationOnboardingDone}
+                  onSelectNo={handleMedicationOnboardingDone}
+                />
+              );
+
             case 'SCAN':
               return (
                 <ScanScreen
@@ -377,6 +440,7 @@ export default function App() {
                   myPills={myPills}
                   onToggleAlarm={goAlarmFromPill}
                   onDeletePill={handleDeletePill}
+                  selectedPill={selectedPill}
                   setSelectedPill={setSelectedPill}
                 />
               );
@@ -421,7 +485,7 @@ export default function App() {
               return (
                 <SearchPillScreen
                   setAppMode={setAppMode}
-                  initialKeyword={searchKeyword}  // ← 추가
+                  initialKeyword={searchKeyword}
                   onSearch={() => setSearchKeyword('')}
                 />
               );
@@ -505,7 +569,7 @@ export default function App() {
                 <WriteBoardScreen
                   setAppMode={setAppMode}
                   writeBoardType={writeBoardType}
-                  voiceDraft={voicePostDraft}  // ← 추가
+                  voiceDraft={voicePostDraft}
                   onDraftUsed={() => setVoicePostDraft(null)}
                 />
               );

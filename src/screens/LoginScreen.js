@@ -12,6 +12,9 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+
+// 1. 꼭 추가해야 하는 라이브러리!
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loginWithKakao } from '../services/kakaoAuthService';
 import { loginWithEmail } from '../services/authService';
 
@@ -20,6 +23,7 @@ export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
+  // --- 이메일 로그인 ---
   async function handleEmailLogin() {
     if (!email.trim() || !password.trim()) {
       Alert.alert('안내', '이메일과 비밀번호를 입력해주세요.');
@@ -38,9 +42,17 @@ export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
         return;
       }
 
+      // 📍 2. 토큰 저장 로직
+      const token = result.data?.access_token || result.data?.token;
+      if (token) {
+        await AsyncStorage.setItem('userToken', token);
+        console.log('✅ 이메일 로그인 토큰 저장 완료');
+      }
+
       setIsLoggedIn(true);
       setUser(result.data?.user || null);
-      setAppMode('HOME');
+      setAppMode('MEDICATION_ONBOARDING');
+
     } catch (e) {
       Alert.alert('로그인 실패', e?.message || '알 수 없는 오류');
     } finally {
@@ -48,6 +60,7 @@ export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
     }
   }
 
+  // --- 카카오 로그인 ---
   async function handleKakaoLogin() {
     setLoading(true);
     try {
@@ -58,9 +71,17 @@ export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
         return;
       }
 
+      // 3. 카카오 토큰 저장 로직
+      const token = result.data?.access_token || result.data?.token;
+      if (token) {
+        await AsyncStorage.setItem('userToken', token);
+        console.log('✅ 카카오 로그인 토큰 저장 완료');
+      }
+
       setIsLoggedIn(true);
       setUser(result.data?.user || null);
-      setAppMode('HOME');
+      setAppMode('MEDICATION_ONBOARDING');
+
     } catch (e) {
       Alert.alert('카카오 로그인 실패', e?.message || '알 수 없는 오류');
     } finally {
