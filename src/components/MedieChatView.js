@@ -20,6 +20,7 @@ import {
     useSpeechRecognitionEvent,
 } from 'expo-speech-recognition';
 
+
 const { width } = Dimensions.get('window');
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -138,7 +139,7 @@ export const MedieChatView = ({
         }
     }, [isThinking]);
 
-    // ✅ ElevenLabs TTS - FileReader 대신 직접 다운로드 방식
+    // ElevenLabs TTS - FileReader 대신 직접 다운로드 방식
     const speakMedie = async (text) => {
         console.log("🔊 speakMedie 호출:", text);
         isSpeakingRef.current = true;
