@@ -44,7 +44,9 @@ export default function RegisterScreen({ setAppMode, setIsLoggedIn, setUser }) {
 
       setIsLoggedIn(true);
       setUser(result.data?.user || null);
-      setAppMode('HOME');
+
+      // ✅ 첫 가입자는 온보딩으로
+      setAppMode('MEDICATION_ONBOARDING');
     } catch (error) {
       Alert.alert('오류', '회원가입 중 문제가 발생했습니다.');
     } finally {
