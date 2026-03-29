@@ -1,14 +1,28 @@
-from pydantic import BaseModel, Field
+from typing import Optional
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class IoTData(BaseModel):
-    user_id: str = Field(..., example="user123")
-    device_id: str = Field(..., example="esp32-001")
-    morning: bool = Field(..., example=True)
-    lunch: bool = Field(..., example=False)
-    evening: bool = Field(..., example=False)
-    bedtime: bool = Field(..., example=False)
-    maddy_message: str = Field(..., example="아침 약 복용 감지")
-    action_required: str = Field(..., example="none")
-    weight_change: float = Field(..., example=-0.2)
-    is_taken: bool = Field(..., example=True)
+    model_config = ConfigDict(
+        populate_by_name=True,
+        extra="ignore",
+    )
+
+    user_id: str = "bkh@bkh.com"
+    device_id: str = Field(..., alias="deviceId")
+
+    morning: bool = False
+    lunch: bool = False
+    evening: bool = False
+    bedtime: bool = False
+
+    action: str
+    pill_status: str
+    zone: int = 1
+    weight_change: float
+
+    timestamp: str
+    epoch: int
+
+    rssi: Optional[int] = None
+    free_heap: Optional[int] = None
