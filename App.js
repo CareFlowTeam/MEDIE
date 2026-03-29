@@ -3,7 +3,7 @@ import { StatusBar, View, Text, ActivityIndicator, KeyboardAvoidingView, Platfor
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
-import { initNotifications } from './src/services/notificationInit';
+import { initNotifications, registerPushToken } from './src/services/notificationInit';
 import { API_BASE } from './src/api/api';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -53,6 +53,9 @@ export default function App() {
   const [appMode, setAppMode] = useState('LOGIN');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isCheckingLogin, setIsCheckingLogin] = useState(true);
+
+
+
 
   const [user, setUser] = useState({
     id: '',
@@ -238,6 +241,7 @@ export default function App() {
 
         if (accessToken && userId) {
           setIsLoggedIn(true);
+          await registerPushToken(userId);
           setUser({
             id: userId,
             name: userName || 'MEDI 사용자',

@@ -1,0 +1,4 @@
+kubectl get pods -n dev
+
+kubectl logs -n dev medichubs-backend-6f98d99bd-5f5gr
+kubectl logs -n dev medichubs-backend-6f98d99bd-bpw94

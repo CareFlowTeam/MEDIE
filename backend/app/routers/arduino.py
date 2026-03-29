@@ -2,35 +2,39 @@ from datetime import datetime, timezone, timedelta
 from fastapi import APIRouter, HTTPException
 from app.schemas.iot_data import IoTData
 
-router = APIRouter(prefix="/arduino", tags=["arduino"])
+router = APIRouter(prefix="/webhook", tags=["arduino"])
 
-# 임시 저장소
 arduino_logs = []
 
 KST = timezone(timedelta(hours=9))
 
 
-@router.post("")
+@router.post("/weight-log")
 async def receive_arduino_data(data: IoTData):
     try:
         received_at = datetime.now(KST).isoformat()
+        is_taken = data.action.upper() == "TAKEN"
 
         record = {
-            "id": f"{data.user_id}_{data.device_id}_{int(datetime.now().timestamp())}",
+            "id": f"{data.user_id}_{data.device_id}_{data.epoch}",
             "user_id": data.user_id,
             "device_id": data.device_id,
             "morning": data.morning,
             "lunch": data.lunch,
             "evening": data.evening,
             "bedtime": data.bedtime,
-            "maddy_message": data.maddy_message,
-            "action_required": data.action_required,
+            "action": data.action,
+            "pill_status": data.pill_status,
+            "zone": data.zone,
             "weight_change": data.weight_change,
-            "is_taken": data.is_taken,
+            "timestamp": data.timestamp,
+            "epoch": data.epoch,
+            "rssi": data.rssi,
+            "free_heap": data.free_heap,
+            "is_taken": is_taken,
             "received_at": received_at,
         }
 
-        # TODO: 여기서 실제 DB 저장으로 교체
         arduino_logs.append(record)
 
         print(f"아두이노 데이터 수신 완료: {data.user_id} / {data.device_id}")
@@ -49,6 +53,10 @@ async def receive_arduino_data(data: IoTData):
         )
 
 
-@router.get("/logs")
+@router.get("/weight-log/logs")
 async def get_arduino_logs():
-    return {"success": True, "count": len(arduino_logs), "items": arduino_logs}
+    return {
+        "success": True,
+        "count": len(arduino_logs),
+        "items": arduino_logs,
+    }
