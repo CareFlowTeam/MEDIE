@@ -1,20 +1,28 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StatusBar, View, Text, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView , useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  StatusBar,
+  View,
+  Text,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { initNotifications, registerPushToken } from './src/services/notificationInit';
-import { API_BASE } from './src/api/api';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
- 
+
 /* styles */
 import { styles } from './src/styles/commonStyles';
- 
+
 /* components */
 import HomeFloatingButton from './src/components/HomeFloatingButton';
 import { MedieChatView } from './src/components/MedieChatView';
- 
+
 /* screens */
 import StartScreen from './src/screens/StartScreen';
 import HomeScreen from './src/screens/HomeScreen';
@@ -38,7 +46,6 @@ import EditPostScreen from './src/screens/EditPostScreen';
 import MedicationOnboardingScreen from './src/screens/MedicationOnboardingScreen';
 import AppInfoScreen from './src/screens/AppInfoScreen';
 import ProfileEditScreen from './src/screens/ProfileEditScreen';
- 
 
 import {
   initAlarmNotifications,
@@ -53,26 +60,23 @@ import {
   deletePillSchedulesByPill,
 } from './src/services/pillScheduleService';
 
-
-
-
 /* hooks */
 import useCameraScan from './src/hooks/useCameraScan';
 import usePharmacySearch from './src/hooks/usePharmacySearch';
 import useBackHandler from './src/hooks/useBackHandler';
 import useMyPills from './src/hooks/useMyPills';
- 
+
 const STORAGE_KEY = 'MY_PILLS_JSON';
 const ONBOARDING_KEY = 'HAS_SEEN_MEDICATION_ONBOARDING';
- 
+
 export default function App() {
-    const insets = useSafeAreaInsets();
+  const insets = useSafeAreaInsets();
 
   const [isStarted, setIsStarted] = useState(false);
   const [appMode, setAppMode] = useState('LOGIN');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isCheckingLogin, setIsCheckingLogin] = useState(true);
- 
+
   const [user, setUser] = useState({
     id: '',
     name: 'MEDI 사용자',
@@ -80,7 +84,7 @@ export default function App() {
     profileImage: null,
     dogType: 'default',
   });
- 
+
   const [selectedSupportPost, setSelectedSupportPost] = useState(null);
   const [writeBoardType, setWriteBoardType] = useState('free');
   const [selectedPost, setSelectedPost] = useState(null);
@@ -90,8 +94,7 @@ export default function App() {
   const [voicePostDraft, setVoicePostDraft] = useState(null);
   const [selectedPill, setSelectedPill] = useState(null);
   const [hasSeenMedicationOnboarding, setHasSeenMedicationOnboarding] = useState(false);
- 
-  // 1. 알약 관련 훅 먼저 선언
+
   const {
     myPills,
     saveMyPills,
@@ -100,97 +103,117 @@ export default function App() {
     changePillAlarmTime,
     deletePill,
   } = useMyPills({ STORAGE_KEY });
- 
-  // 2. registerPillFromAiResponse 정의
+
+  const showBottomBar =
+    isLoggedIn &&
+    ![
+      'LOGIN',
+      'REGISTER',
+      'MEDICATION_ONBOARDING',
+      'SCAN',
+      'BOARD',
+      'EDIT_POST',
+      'WRITE_BOARD',
+      'SUPPORT_WRITE',
+      'PROFILE_EDIT',
+      'APP_INFO',
+    ].includes(appMode);
+
   const registerPillFromAiResponse = useCallback(
     async (aiText) => {
       const responseText = typeof aiText === 'string' ? aiText : aiText?.rawText || '';
- 
+
       const pillName =
         (typeof aiText === 'object' && aiText?.pillName) ||
-        responseText.split('\n').find((l) => l.includes('알약 이름'))?.replace('💊 알약 이름: ', '') ||
+        responseText
+          .split('\n')
+          .find((l) => l.includes('알약 이름'))
+          ?.replace('💊 알약 이름: ', '') ||
         '알 수 없음';
- 
-      // ✅ AI가 예측한 스케줄 사용 (없으면 아침 기본값)
-      const aiSchedule = (typeof aiText === 'object' && Array.isArray(aiText?.schedule))
-        ? aiText.schedule
-        : ['아침'];
- 
+
+      const aiSchedule =
+        typeof aiText === 'object' && Array.isArray(aiText?.schedule)
+          ? aiText.schedule
+          : ['아침'];
+
       const LABEL_TIME_MAP = {
-        '아침': '08:00',
-        '점심': '12:00',
-        '저녁': '18:00',
-        '취침전': '21:00',
+        아침: '08:00',
+        점심: '12:00',
+        저녁: '18:00',
+        취침전: '21:00',
       };
- 
 
-      const syncCreateSchedulesToServer = useCallback(
-    async (pill, schedules) => {
-      if (!user?.id) return schedules;
+      const syncCreateSchedulesToServer = async (pill, schedules) => {
+        if (!user?.id) return schedules;
 
-      const syncedSchedules = [...schedules];
+        const syncedSchedules = [...schedules];
 
-      for (let i = 0; i < syncedSchedules.length; i += 1) {
-        const schedule = syncedSchedules[i];
-        try {
-          const result = await createPillSchedule({
-            userId: user.id,
-            pillId: pill.id,
-            pillName: pill.name,
-            scheduleIndex: i,
-            label: schedule.label || '',
-            time: schedule.time,
-            enabled: schedule.enabled ?? true,
-          });
+        for (let i = 0; i < syncedSchedules.length; i += 1) {
+          const schedule = syncedSchedules[i];
+          try {
+            const result = await createPillSchedule({
+              userId: user.id,
+              pillId: pill.id,
+              pillName: pill.name,
+              scheduleIndex: i,
+              label: schedule.label || '',
+              time: schedule.time,
+              enabled: schedule.enabled ?? true,
+            });
 
-          syncedSchedules[i] = {
-            ...schedule,
-            serverScheduleId: result?.item?.id || null,
-          };
-        } catch (error) {
-          console.error('❌ 서버 스케줄 생성 실패:', error);
+            syncedSchedules[i] = {
+              ...schedule,
+              serverScheduleId: result?.item?.id || null,
+            };
+          } catch (error) {
+            console.error('❌ 서버 스케줄 생성 실패:', error);
+          }
         }
-      }
 
-      return syncedSchedules;
-    },
-    [user]
-  );
+        return syncedSchedules;
+      };
 
-
-      // ✅ AI 예측 스케줄 → 알람 시간 자동 설정
-      const initialSchedules = aiSchedule.map(label => ({
+      const initialSchedules = aiSchedule.map((label) => ({
         label,
         time: LABEL_TIME_MAP[label] || '08:00',
         notificationId: null,
+        notificationIds: [],
         enabled: true,
         takenToday: false,
       }));
- 
-      const newPill = {
+
+      const tempPill = {
         id: Date.now().toString(),
         name: pillName,
         usage: typeof aiText === 'object' ? aiText?.usage || '' : '',
         warning: typeof aiText === 'object' ? aiText?.caution || '' : '',
         confidence: typeof aiText === 'object' ? aiText?.confidence || '100' : '100',
         schedules: initialSchedules,
-        alarmEnabled: true,  // ✅ 자동으로 알람 ON
+        alarmEnabled: true,
         notificationId: null,
         createdAt: Date.now(),
       };
- 
+
+      const syncedSchedules = await syncCreateSchedulesToServer(tempPill, initialSchedules);
+
+      const newPill = {
+        ...tempPill,
+        schedules: syncedSchedules,
+      };
+
       const updated = [newPill, ...(myPills ?? [])];
+
       try {
         await saveMyPills(updated);
       } catch (e) {
         console.error('❌ saveMyPills 실패', e);
       }
+
       setAppMode('MY_PILL');
     },
-    [myPills, saveMyPills]
+    [myPills, saveMyPills, user]
   );
- 
-  // 3. 카메라 스캔 훅
+
   const {
     cameraRef,
     isAnalyzing,
@@ -203,8 +226,7 @@ export default function App() {
   } = useCameraScan({
     onRegisterPill: registerPillFromAiResponse,
   });
- 
-  // 4. 나머지 훅 및 핸들러
+
   const {
     nearbyPharmacies,
     isSearchingMap,
@@ -212,7 +234,7 @@ export default function App() {
     openKakaoMapDetail,
     makePhoneCall,
   } = usePharmacySearch();
- 
+
   const handleUpdateProfile = async (updatedData) => {
     const newUser = {
       ...user,
@@ -226,17 +248,17 @@ export default function App() {
       await AsyncStorage.setItem('userProfileImage', updatedData.profileImage);
     }
   };
- 
+
   const handleOpenBoard = (post, boardTitle = '자유게시판') => {
     setSelectedPost(post);
     setSelectedBoardTitle(boardTitle);
     setAppMode('BOARD');
   };
- 
+
   const handleBackToCommunity = () => {
     setAppMode('COMMUNITY');
   };
- 
+
   const handleMedicationOnboardingDone = async () => {
     try {
       await SecureStore.setItemAsync(ONBOARDING_KEY, 'true');
@@ -245,7 +267,7 @@ export default function App() {
       console.error('온보딩 저장 실패:', error);
     }
   };
- 
+
   const completeNextDose = useCallback(async () => {
     const allSchedules = myPills.flatMap((pill) =>
       (pill.schedules || []).map((schedule, index) => ({
@@ -255,11 +277,13 @@ export default function App() {
         scheduleIndex: index,
       }))
     );
+
     const next = allSchedules
       .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
       .find((item) => !item.takenToday);
- 
+
     if (!next) return;
+
     const updated = myPills.map((pill) => {
       if (pill.id !== next.pillId) return pill;
       return {
@@ -269,32 +293,40 @@ export default function App() {
         ),
       };
     });
+
     await saveMyPills(updated);
   }, [myPills, saveMyPills]);
- 
-  const toggleAllAlarms = useCallback(async (enabled) => {
-    const updated = myPills.map(pill => ({ ...pill, alarmEnabled: enabled }));
-    await saveMyPills(updated);
-  }, [myPills, saveMyPills]);
- 
+
+  const toggleAllAlarms = useCallback(
+    async (enabled) => {
+      const updated = myPills.map((pill) => ({ ...pill, alarmEnabled: enabled }));
+      await saveMyPills(updated);
+    },
+    [myPills, saveMyPills]
+  );
+
   const deleteAllAlarms = useCallback(async () => {
-    const updated = myPills.map(pill => ({
+    const updated = myPills.map((pill) => ({
       ...pill,
       alarmEnabled: false,
-      schedules: (pill.schedules || []).map(s => ({ ...s, notificationId: null, enabled: false }))
+      schedules: (pill.schedules || []).map((s) => ({
+        ...s,
+        notificationId: null,
+        notificationIds: [],
+        enabled: false,
+      })),
     }));
     await saveMyPills(updated);
   }, [myPills, saveMyPills]);
- 
+
   const goAlarmFromPill = async (pillId) => {
     await ensurePillSchedule(pillId);
     setAppMode('ALARM');
   };
- 
-  // ✅ pillHistory 포맷 정규화 함수
+
   const handlePillHistoryUpdate = useCallback((newHistory) => {
     if (!Array.isArray(newHistory)) return;
-    const normalized = newHistory.map(item => ({
+    const normalized = newHistory.map((item) => ({
       date: item.date || new Date().toISOString().slice(0, 10),
       time: item.time || '--:--',
       taken: item.taken ?? true,
@@ -304,9 +336,8 @@ export default function App() {
     }));
     setPillHistory(normalized);
   }, []);
- 
 
-const togglePillAlarmAndReschedule = useCallback(
+  const togglePillAlarmAndReschedule = useCallback(
     async (pillId) => {
       const targetPill = myPills.find((pill) => pill.id === pillId);
       if (!targetPill) return;
@@ -451,29 +482,28 @@ const togglePillAlarmAndReschedule = useCallback(
     [myPills, deletePill, user]
   );
 
-
-
   useEffect(() => {
     const setup = async () => {
       try {
         setIsCheckingLogin(true);
+
         await initNotifications();
         await initAlarmNotifications();
-
         await ExpoSpeechRecognitionModule.requestPermissionsAsync();
- 
+
         const accessToken = await SecureStore.getItemAsync('accessToken');
         const userId = await SecureStore.getItemAsync('userId');
         const userName = await SecureStore.getItemAsync('userName');
         const userEmail = await SecureStore.getItemAsync('userEmail');
         const seenOnboarding = await SecureStore.getItemAsync(ONBOARDING_KEY);
         const savedProfileImg = await AsyncStorage.getItem('userProfileImage');
- 
+
         setHasSeenMedicationOnboarding(seenOnboarding === 'true');
- 
+
         if (accessToken && userId) {
           setIsLoggedIn(true);
           await registerPushToken(userId);
+
           setUser({
             id: userId,
             name: userName || 'MEDI 사용자',
@@ -486,17 +516,19 @@ const togglePillAlarmAndReschedule = useCallback(
           setAppMode('LOGIN');
         }
       } catch (error) {
+        console.error('초기 설정 실패:', error);
         setIsLoggedIn(false);
         setAppMode('LOGIN');
       } finally {
         setIsCheckingLogin(false);
       }
     };
+
     setup();
   }, []);
- 
+
   useBackHandler({ appMode, setAppMode, showResult });
- 
+
   if (isCheckingLogin) {
     return (
       <SafeAreaView style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
@@ -504,40 +536,57 @@ const togglePillAlarmAndReschedule = useCallback(
       </SafeAreaView>
     );
   }
- 
+
   if (!isStarted) {
     return (
       <StartScreen
         onStart={() => {
           setIsStarted(true);
-          setAppMode(isLoggedIn ? (hasSeenMedicationOnboarding ? 'HOME' : 'MEDICATION_ONBOARDING') : 'LOGIN');
+          setAppMode(
+            isLoggedIn
+              ? hasSeenMedicationOnboarding
+                ? 'HOME'
+                : 'MEDICATION_ONBOARDING'
+              : 'LOGIN'
+          );
         }}
         user={isLoggedIn ? user : null}
       />
     );
   }
- 
+
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <StatusBar backgroundColor="#F7F3DD" barStyle="dark-content" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
           {appMode === 'REGISTER' ? (
-            <RegisterScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />
+            <RegisterScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
           ) : (
-            <LoginScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />
+            <LoginScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
- 
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
       <StatusBar backgroundColor="#F7F3DD" barStyle="dark-content" />
- 
+
       {appMode === 'HOME' && <HomeFloatingButton onPress={() => setAppMode('SCAN')} />}
- 
+
       <View style={{ flex: 1 }}>
         {(() => {
           switch (appMode) {
@@ -545,7 +594,10 @@ const togglePillAlarmAndReschedule = useCallback(
               return (
                 <HomeScreen
                   setAppMode={setAppMode}
-                  onPressMap={() => { setAppMode('MAP'); findNearbyPharmacies(); }}
+                  onPressMap={() => {
+                    setAppMode('MAP');
+                    findNearbyPharmacies();
+                  }}
                   isLoggedIn={isLoggedIn}
                   user={user}
                   myPills={myPills}
@@ -553,8 +605,10 @@ const togglePillAlarmAndReschedule = useCallback(
                   setUser={setUser}
                 />
               );
+
             case 'APP_INFO':
               return <AppInfoScreen setAppMode={setAppMode} />;
+
             case 'PROFILE_EDIT':
               return (
                 <ProfileEditScreen
@@ -563,6 +617,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   onBack={() => setAppMode('MY_PAGE')}
                 />
               );
+
             case 'MEDICATION_ONBOARDING':
               return (
                 <MedicationOnboardingScreen
@@ -571,6 +626,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   onSelectNo={handleMedicationOnboardingDone}
                 />
               );
+
             case 'SCAN':
               return (
                 <ScanScreen
@@ -585,26 +641,29 @@ const togglePillAlarmAndReschedule = useCallback(
                   setAppMode={setAppMode}
                 />
               );
+
             case 'MY_PILL':
               return (
                 <MyPillScreen
                   setAppMode={setAppMode}
                   myPills={myPills}
                   onToggleAlarm={goAlarmFromPill}
-                  onDeletePill={deletePill}
+                  onDeletePill={deletePillAndCancelAlarm}
                   selectedPill={selectedPill}
                   setSelectedPill={setSelectedPill}
                 />
               );
+
             case 'MY_PILL_DETAIL':
               return (
                 <MyPillDetailScreen
                   pill={selectedPill}
                   onToggleAlarm={goAlarmFromPill}
-                  onDeletePill={deletePill}
+                  onDeletePill={deletePillAndCancelAlarm}
                   setAppMode={setAppMode}
                 />
               );
+
             case 'MAP':
               return (
                 <MapScreen
@@ -616,6 +675,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   openKakaoMapDetail={openKakaoMapDetail}
                 />
               );
+
             case 'ALARM':
               return (
                 <AlarmScreen
@@ -626,14 +686,10 @@ const togglePillAlarmAndReschedule = useCallback(
                   deletePill={deletePillAndCancelAlarm}
                 />
               );
+
             case 'HISTORY':
-              // ✅ pillHistory 전달 추가
-              return (
-                <HistoryScreen
-                  setAppMode={setAppMode}
-                  pillHistory={pillHistory}
-                />
-              );
+              return <HistoryScreen setAppMode={setAppMode} pillHistory={pillHistory} />;
+
             case 'SEARCH_PILL':
               return (
                 <SearchPillScreen
@@ -642,6 +698,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   onSearch={() => setSearchKeyword('')}
                 />
               );
+
             case 'COMMUNITY':
               return (
                 <CommunityScreen
@@ -650,6 +707,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   setWriteBoardType={setWriteBoardType}
                 />
               );
+
             case 'BOARD':
               return (
                 <BoardScreen
@@ -657,20 +715,17 @@ const togglePillAlarmAndReschedule = useCallback(
                   post={selectedPost}
                   boardTitle={selectedBoardTitle}
                   onBack={handleBackToCommunity}
-                  currentUserName={user.nickname || user.name}  // ← user.id → user.name 으로 변경
+                  currentUserName={user.nickname || user.name}
                   onEditBoard={(post) => {
                     setSelectedPost(post);
                     setAppMode('EDIT_POST');
                   }}
                 />
               );
+
             case 'EDIT_POST':
-              return (
-                <EditPostScreen
-                  setAppMode={setAppMode}
-                  post={selectedPost}
-                />
-              );
+              return <EditPostScreen setAppMode={setAppMode} post={selectedPost} />;
+
             case 'SUPPORT':
               return (
                 <SupportMainScreen
@@ -681,6 +736,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   }}
                 />
               );
+
             case 'SUPPORT_DETAIL':
               return (
                 <SupportListScreen
@@ -689,8 +745,10 @@ const togglePillAlarmAndReschedule = useCallback(
                   setAppMode={setAppMode}
                 />
               );
+
             case 'SUPPORT_WRITE':
               return <SupportWriteScreen setAppMode={setAppMode} />;
+
             case 'MY_PAGE':
               return (
                 <MyPageScreen
@@ -706,6 +764,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   }}
                 />
               );
+
             case 'WRITE_BOARD':
               return (
                 <WriteBoardScreen
@@ -715,6 +774,7 @@ const togglePillAlarmAndReschedule = useCallback(
                   onDraftUsed={() => setVoicePostDraft(null)}
                 />
               );
+
             default:
               return (
                 <HomeScreen
@@ -727,8 +787,7 @@ const togglePillAlarmAndReschedule = useCallback(
           }
         })()}
       </View>
- 
-      {/* 하단바 */}
+
       {showBottomBar && (
         <View
           style={[
@@ -746,11 +805,7 @@ const togglePillAlarmAndReschedule = useCallback(
           ]}
         >
           <TouchableOpacity onPress={() => setAppMode('HOME')} style={appStyles.tabItem}>
-            <Ionicons
-              name="home"
-              size={26}
-              color={appMode === 'HOME' ? '#065809' : '#67A369'}
-            />
+            <Ionicons name="home" size={26} color={appMode === 'HOME' ? '#065809' : '#67A369'} />
             <Text
               style={[
                 appStyles.tabText,
@@ -777,10 +832,7 @@ const togglePillAlarmAndReschedule = useCallback(
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => setAppMode('SEARCH_PILL')}
-            style={appStyles.tabItem}
-          >
+          <TouchableOpacity onPress={() => setAppMode('SEARCH_PILL')} style={appStyles.tabItem}>
             <Ionicons
               name="search"
               size={26}
@@ -796,10 +848,7 @@ const togglePillAlarmAndReschedule = useCallback(
             </Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            onPress={() => setAppMode('COMMUNITY')}
-            style={appStyles.tabItem}
-          >
+          <TouchableOpacity onPress={() => setAppMode('COMMUNITY')} style={appStyles.tabItem}>
             <Ionicons
               name="chatbubble-ellipses"
               size={26}
@@ -832,7 +881,7 @@ const togglePillAlarmAndReschedule = useCallback(
           </TouchableOpacity>
         </View>
       )}
- 
+
       <MedieChatView
         appMode={appMode}
         setAppMode={setAppMode}
@@ -845,13 +894,12 @@ const togglePillAlarmAndReschedule = useCallback(
         onWritePost={(draft) => setVoicePostDraft(draft)}
         myPills={myPills}
         pillHistory={pillHistory}
-        // ✅ 포맷 정규화 핸들러
         onPillHistoryUpdate={handlePillHistoryUpdate}
       />
     </SafeAreaView>
   );
 }
- 
+
 const appStyles = StyleSheet.create({
   flex: {
     flex: 1,
