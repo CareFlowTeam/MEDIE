@@ -13,13 +13,6 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
-<<<<<<< HEAD
-import { initNotifications, registerPushToken } from './src/services/notificationInit';
-import { API_BASE } from './src/api/api';
-import { Ionicons } from '@expo/vector-icons';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-=======
 import { initNotifications } from './src/services/notificationInit';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -37,7 +30,6 @@ import {
   deletePillSchedulesByPill,
 } from './src/services/pillScheduleService';
 
->>>>>>> d87c7e9 (코드 수정)
 /* styles */
 import { styles } from './src/styles/commonStyles';
 
@@ -78,8 +70,6 @@ import useMyPills from './src/hooks/useMyPills';
 const STORAGE_KEY = 'MY_PILLS_JSON';
 const ONBOARDING_KEY = 'HAS_SEEN_MEDICATION_ONBOARDING';
 
-<<<<<<< HEAD
-=======
 const HIDDEN_BOTTOM_BAR_MODES = [
   'LOGIN',
   'REGISTER',
@@ -90,7 +80,6 @@ const HIDDEN_BOTTOM_BAR_MODES = [
   'PROFILE_EDIT',
 ];
 
->>>>>>> d87c7e9 (코드 수정)
 export default function App() {
   const insets = useSafeAreaInsets();
 
@@ -99,12 +88,6 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isCheckingLogin, setIsCheckingLogin] = useState(true);
 
-<<<<<<< HEAD
-
-
-
-=======
->>>>>>> d87c7e9 (코드 수정)
   const [user, setUser] = useState({
     id: '',
     name: 'MEDI 사용자',
@@ -123,12 +106,8 @@ export default function App() {
   const [selectedPill, setSelectedPill] = useState(null);
   const [hasSeenMedicationOnboarding, setHasSeenMedicationOnboarding] = useState(false);
 
-<<<<<<< HEAD
-  // 1. 알약 관련 훅 먼저 선언
-=======
   const showBottomBar = !HIDDEN_BOTTOM_BAR_MODES.includes(appMode);
 
->>>>>>> d87c7e9 (코드 수정)
   const {
     myPills,
     saveMyPills,
@@ -138,9 +117,6 @@ export default function App() {
     deletePill,
   } = useMyPills({ STORAGE_KEY });
 
-<<<<<<< HEAD
-  // 2. [중요] registerPillFromAiResponse 정의 (훅 호출보다 위에 있어야 함)
-=======
   const syncCreateSchedulesToServer = useCallback(
     async (pill, schedules) => {
       if (!user?.id) return schedules;
@@ -174,7 +150,6 @@ export default function App() {
     [user]
   );
 
->>>>>>> d87c7e9 (코드 수정)
   const registerPillFromAiResponse = useCallback(
     async (aiText) => {
       const responseText = typeof aiText === 'string' ? aiText : aiText?.rawText || '';
@@ -187,12 +162,6 @@ export default function App() {
           ?.replace('💊 알약 이름: ', '') ||
         '알 수 없음';
 
-<<<<<<< HEAD
-      const initialSchedules = [
-        { label: '아침', time: '08:00', notificationId: null, enabled: true, takenToday: false },
-      ];
-
-=======
       const pillId = Date.now().toString();
 
       let initialSchedules = [
@@ -222,7 +191,6 @@ export default function App() {
         console.error('❌ 초기 알람 예약 실패:', error);
       }
 
->>>>>>> d87c7e9 (코드 수정)
       const newPill = {
         id: pillId,
         name: pillName,
@@ -235,10 +203,7 @@ export default function App() {
         createdAt: Date.now(),
       };
 
-<<<<<<< HEAD
       const updated = [newPill, ...(myPills ?? [])];
-=======
->>>>>>> d87c7e9 (코드 수정)
       try {
         const syncedSchedules = await syncCreateSchedulesToServer(newPill, initialSchedules);
 
@@ -258,10 +223,7 @@ export default function App() {
     [myPills, saveMyPills, syncCreateSchedulesToServer]
   );
 
-<<<<<<< HEAD
   // 3. 카메라 스캔 훅 (위에서 정의한 함수 전달)
-=======
->>>>>>> d87c7e9 (코드 수정)
   const {
     cameraRef,
     isAnalyzing,
@@ -275,10 +237,7 @@ export default function App() {
     onRegisterPill: registerPillFromAiResponse,
   });
 
-<<<<<<< HEAD
   // 4. 나머지 훅 및 핸들러
-=======
->>>>>>> d87c7e9 (코드 수정)
   const {
     nearbyPharmacies,
     isSearchingMap,
@@ -408,11 +367,7 @@ export default function App() {
     );
 
     await saveMyPills(updated);
-<<<<<<< HEAD
-  }, [myPills, saveMyPills]);
-=======
   }, [myPills, saveMyPills, user]);
->>>>>>> d87c7e9 (코드 수정)
 
   const deleteAllAlarms = useCallback(async () => {
     const updated = await Promise.all(
@@ -448,19 +403,13 @@ export default function App() {
     );
 
     await saveMyPills(updated);
-<<<<<<< HEAD
-  }, [myPills, saveMyPills]);
-=======
   }, [myPills, saveMyPills, user]);
->>>>>>> d87c7e9 (코드 수정)
 
   const goAlarmFromPill = async (pillId) => {
     await ensurePillSchedule(pillId);
     setAppMode('ALARM');
   };
 
-<<<<<<< HEAD
-=======
   const togglePillAlarmAndReschedule = useCallback(
     async (pillId) => {
       const targetPill = myPills.find((pill) => pill.id === pillId);
@@ -606,7 +555,6 @@ export default function App() {
     [myPills, deletePill, user]
   );
 
->>>>>>> d87c7e9 (코드 수정)
   useEffect(() => {
     const setup = async () => {
       try {
@@ -710,9 +658,6 @@ export default function App() {
 
       {appMode === 'HOME' && <HomeFloatingButton onPress={() => setAppMode('SCAN')} />}
 
-<<<<<<< HEAD
-      <View style={{ flex: 1 }}>
-=======
       <View
         style={[
           appStyles.screenContainer,
@@ -725,7 +670,6 @@ export default function App() {
           },
         ]}
       >
->>>>>>> d87c7e9 (코드 수정)
         {(() => {
           switch (appMode) {
             case 'HOME':
@@ -921,11 +865,6 @@ export default function App() {
         })()}
       </View>
 
-<<<<<<< HEAD
-      {/* 하단바 디자인 고정 */}
-      {!['LOGIN', 'REGISTER', 'MEDICATION_ONBOARDING', 'SCAN', 'START', 'APP_INFO', 'PROFILE_EDIT'].includes(appMode) && (
-        <View style={appStyles.bottomBar}>
-=======
       {showBottomBar && (
         <View
           style={[
@@ -942,7 +881,6 @@ export default function App() {
             },
           ]}
         >
->>>>>>> d87c7e9 (코드 수정)
           <TouchableOpacity onPress={() => setAppMode('HOME')} style={appStyles.tabItem}>
             <Ionicons
               name="home"
