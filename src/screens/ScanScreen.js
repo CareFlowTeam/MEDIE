@@ -18,6 +18,7 @@ import {
   Keyboard,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as SecureStore from 'expo-secure-store';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { CameraView, Camera } from 'expo-camera';
 import { Ionicons } from '@expo/vector-icons';
@@ -89,7 +90,10 @@ export default function ScanScreen({
   const rotate = spinAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
-  });
+  }); 
+
+  console.log('### ScanScreen loaded v2 ###');
+  
 
   const parsedResult = useMemo(() => {
     if (!aiResponse) return null;
@@ -132,75 +136,134 @@ export default function ScanScreen({
 
   // 1. AI 결과 등록 함수
   const handleConfirm = async () => {
-    console.log("📍 AI 등록 시도 중...");
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://20.106.40.121/pills/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: parsedResult?.pillName,
-          schedule: parsedResult?.schedule,
-          source: 'ai',
-        }),
-      });
+  try {
+    console.log('=== handleConfirm start ===');
+    console.log('### HANDLE_CONFIRM v2 ###'); 
 
-      const result = await response.json();
-      console.log("📍 서버 응답:", result);
+    const token = await SecureStore.getItemAsync('accessToken');
+    console.log('register token =', token);
+console.log('register token jwt shape =', typeof token === 'string' && token.split('.').length === 3);
 
-      // 서버 응답이 성공(true)이거나 데이터 객체가 오면 성공 처리
-      if (result) {
-        Alert.alert('등록 완료', `${parsedResult?.pillName} 등록을 완료했어요! 멍!`);
-        onRegisterPill?.();
-        onCloseResult();
-        setAppMode('HOME'); // 등록 후 홈으로 이동
-      }
-    } catch (error) {
-      console.error("❌ handleConfirm 에러:", error);
-      Alert.alert('오류', '등록에 실패했어요. 네트워크를 확인해주세요.');
-    }
-  };
-
-  // 2. 수동 등록 함수
-  const handleManualSubmit = async () => {
-    if (!manualName.trim()) {
-      Alert.alert('입력 확인', '약 이름을 입력해주세요.');
+    if (!token) {
+      Alert.alert('인증 오류', '로그인 토큰이 없습니다. 다시 로그인해주세요.');
       return;
     }
 
-    try {
-      console.log("📍 수동 등록 시도 중...");
-      const token = await AsyncStorage.getItem('userToken');
-      const response = await fetch('http://20.106.40.121/pills/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          name: manualName,
-          schedule: parsedResult?.schedule || ['아침'],
-          source: 'manual',
-        }),
-      });
+    const response = await fetch('http://20.106.40.121/pills/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        name: parsedResult?.pillName,
+        schedule: parsedResult?.schedule || ['아침'],
+        source: 'ai',
+      }),
+    });
 
-      const result = await response.json();
-      if (result) {
-        Alert.alert('등록 완료', `${manualName} 등록을 완료했어요! 멍멍!`);
-        setManualName('');
-        setShowManualInput(false);
-        onRegisterPill?.();
-        onCloseResult();
-        setAppMode('HOME'); // 등록 후 홈으로 이동
-      }
-    } catch (error) {
-      console.error("❌ handleManualSubmit 에러:", error);
-      Alert.alert('오류', '서버와 연결할 수 없습니다.');
+    const rawText = await response.text();
+    console.log('status:', response.status);
+    console.log('rawText:', rawText);
+
+    let result = {};
+    try {
+      result = rawText ? JSON.parse(rawText) : {};
+    } catch (e) {
+      console.error('JSON parse 실패:', e);
     }
-  };
+
+    if (!response.ok || !result.success) {
+      Alert.alert('등록 실패', result?.message || result?.detail || `HTTP ${response.status}`);
+      return;
+    }
+
+    Alert.alert('등록 완료', `${parsedResult?.pillName} 등록을 완료했어요! 멍!`);
+
+    try {
+      await onRegisterPill?.(parsedResult);
+    } catch (e) {
+      console.error('onRegisterPill 에러:', e);
+    }
+
+    onCloseResult?.();
+    setAppMode?.('HOME');
+  } catch (error) {
+    console.error('❌ handleConfirm fetch 에러:', error);
+    Alert.alert('네트워크 오류', error?.message || '서버 요청에 실패했습니다.');
+  }
+};
+  
+
+
+  // 2. 수동 등록 함수
+  const handleManualSubmit = async () => {
+  if (!manualName.trim()) {
+    Alert.alert('입력 확인', '약 이름을 입력해주세요.');
+    return;
+  }
+
+  try {
+    console.log('=== handleManualSubmit start ===');
+
+    const token = await SecureStore.getItemAsync('accessToken');
+    console.log('register token =', token);
+console.log('register token jwt shape =', typeof token === 'string' && token.split('.').length === 3);
+
+    if (!token) {
+      Alert.alert('인증 오류', '로그인 토큰이 없습니다. 다시 로그인해주세요.');
+      return;
+    }
+
+    const response = await fetch('http://20.106.40.121/pills/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        name: manualName,
+        schedule: parsedResult?.schedule || ['아침'],
+        source: 'manual',
+      }),
+    });
+
+    const rawText = await response.text();
+    console.log('manual status:', response.status);
+    console.log('manual rawText:', rawText);
+
+    let result = {};
+    try {
+      result = rawText ? JSON.parse(rawText) : {};
+    } catch (e) {
+      console.error('manual JSON parse 실패:', e);
+    }
+
+    if (!response.ok || !result.success) {
+      Alert.alert('등록 실패', result?.message || result?.detail || `HTTP ${response.status}`);
+      return;
+    }
+
+    Alert.alert('등록 완료', `${manualName} 등록을 완료했어요! 멍멍!`);
+
+    try {
+      await onRegisterPill?.({
+        pillName: manualName,
+        schedule: parsedResult?.schedule || ['아침'],
+      });
+    } catch (e) {
+      console.error('manual onRegisterPill 에러:', e);
+    }
+
+    setManualName('');
+    setShowManualInput(false);
+    onCloseResult?.();
+    setAppMode?.('HOME');
+  } catch (error) {
+    console.error('❌ handleManualSubmit fetch 에러:', error);
+    Alert.alert('네트워크 오류', error?.message || '서버 요청에 실패했습니다.');
+  }
+};
 
   if (hasPermission === null) {
     return (

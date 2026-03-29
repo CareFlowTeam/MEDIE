@@ -10,6 +10,12 @@
     "newArchEnabled": false,
     "plugins": [
       [
+        "expo-notifications",
+        {
+          "sounds": ["./assets/voice/jihyun_voice.m4a"]
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "MedicHubs에서 촬영을 위해 카메라 접근이 필요합니다.",
@@ -69,7 +75,8 @@
         "ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS"
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "POST_NOTIFICATIONS"
       ]
     },
     "web": {

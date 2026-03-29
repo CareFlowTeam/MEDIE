@@ -13,76 +13,135 @@ import {
   SafeAreaView
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import * as SecureStore from 'expo-secure-store'; 
+import * as SecureStore from 'expo-secure-store';
 import { loginWithEmail } from '../services/authService';
 import { loginWithKakao } from '../services/kakaoAuthService';
+
+function looksLikeJwt(token) {
+  return typeof token === 'string' && token.split('.').length === 3;
+}
+
+async function clearLegacyAuth() {
+  await SecureStore.deleteItemAsync('accessToken');
+  await SecureStore.deleteItemAsync('userId');
+  await SecureStore.deleteItemAsync('userName');
+  await SecureStore.deleteItemAsync('userEmail');
+}
 
 export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
 
-  // --- 로그인 로직 수정 ---
+  async function saveLoginSession(token, userObj) {
+    await clearLegacyAuth();
+
+    await SecureStore.setItemAsync('accessToken', token);
+    await SecureStore.setItemAsync('userId', String(userObj?.id || ''));
+    await SecureStore.setItemAsync('userName', userObj?.name || userObj?.nickname || '');
+    await SecureStore.setItemAsync('userEmail', userObj?.email || '');
+  }
+
   async function handleEmailLogin() {
     if (!email.trim() || !password.trim()) {
       Alert.alert('안내', '이메일과 비밀번호를 입력해주세요.');
       return;
     }
+
     setLoading(true);
+
     try {
-      const result = await loginWithEmail({ email: email.trim(), password: password.trim() });
+      const result = await loginWithEmail({
+        email: email.trim(),
+        password: password.trim(),
+      });
+
+      console.log('email login result =', JSON.stringify(result, null, 2));
+
       if (!result.success) {
         Alert.alert('로그인 실패', result.message);
         return;
       }
 
       const token = result.data?.access_token || result.data?.token;
-      const userObj = result.data?.user;
+      const userObj = result.data?.user || null;
 
-      if (token) {
-        // App.js에서 사용하는 키값('accessToken')으로 통일해서 저장
-        await SecureStore.setItemAsync('accessToken', token);
-        await SecureStore.setItemAsync('userId', String(userObj?.id || ''));
-        await SecureStore.setItemAsync('userName', userObj?.name || userObj?.nickname || '');
-        await SecureStore.setItemAsync('userEmail', userObj?.email || '');
+      console.log('email token =', token);
+      console.log('email token jwt shape =', looksLikeJwt(token));
+
+      if (!token) {
+        Alert.alert('로그인 실패', '로그인 토큰이 없습니다.');
+        return;
       }
 
-      setUser(userObj || null);
+      if (!looksLikeJwt(token)) {
+        Alert.alert('로그인 실패', '서버에서 받은 토큰 형식이 올바르지 않습니다.');
+        return;
+      }
+
+      await saveLoginSession(token, userObj);
+
+      setUser(userObj);
       setIsLoggedIn(true);
       setAppMode('MEDICATION_ONBOARDING');
     } catch (e) {
+      console.log('handleEmailLogin error =', e);
       Alert.alert('로그인 실패', e?.message || '알 수 없는 오류');
     } finally {
       setLoading(false);
     }
   }
 
-  // 카카오 로그인도 동일하게 수정 
   async function handleKakaoLogin() {
     setLoading(true);
+
     try {
+      await clearLegacyAuth();
+
       const result = await loginWithKakao();
-      if (!result.success) { Alert.alert('카카오 로그인 실패', result.message); return; }
 
-      const token = result.data?.access_token || result.data?.token;
-      const userObj = result.data?.user;
+      console.log('kakao login result =', JSON.stringify(result, null, 2));
 
-      if (token) {
-        await SecureStore.setItemAsync('accessToken', token);
-        await SecureStore.setItemAsync('userId', String(userObj?.id || ''));
+      if (!result.success) {
+        Alert.alert('카카오 로그인 실패', result.message);
+        return;
       }
 
-      setUser(userObj || null);
+      const token = result.data?.access_token || result.data?.token;
+      const userObj = result.data?.user || null;
+
+      console.log('kakao saved token =', token);
+      console.log('kakao token jwt shape =', looksLikeJwt(token));
+
+      if (!token) {
+        Alert.alert('카카오 로그인 실패', '백엔드 JWT가 없습니다.');
+        return;
+      }
+
+      if (!looksLikeJwt(token)) {
+        Alert.alert('카카오 로그인 실패', '백엔드에서 받은 토큰이 JWT 형식이 아닙니다.');
+        return;
+      }
+
+      await saveLoginSession(token, userObj);
+
+      const savedToken = await SecureStore.getItemAsync('accessToken');
+      console.log('saved secure token =', savedToken);
+      console.log('saved secure token jwt shape =', looksLikeJwt(savedToken));
+
+      setUser(userObj);
       setIsLoggedIn(true);
       setAppMode('MEDICATION_ONBOARDING');
     } catch (e) {
+      console.log('handleKakaoLogin error =', e);
       Alert.alert('카카오 로그인 실패', e?.message || '알 수 없는 오류');
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
     <LinearGradient colors={['#F9FFF9', '#F0F4F0']} style={styles.flex}>
-      {/* ... (기존 return 내부 UI 코드는 동일) ... */}
       <SafeAreaView style={styles.flex}>
         <KeyboardAvoidingView
           behavior={Platform.OS === 'ios' ? 'padding' : null}
@@ -132,10 +191,11 @@ export default function LoginScreen({ setAppMode, setIsLoggedIn, setUser }) {
               <TouchableOpacity
                 onPress={handleKakaoLogin}
                 style={styles.kakaoWrap}
+                disabled={loading}
               >
                 <Image
                   source={require('../../assets/kakaologin.png')}
-                  style={{ width: '100%', height: 52 }}
+                  style={{ width: '100%', height: 52, opacity: loading ? 0.7 : 1 }}
                   resizeMode="contain"
                 />
               </TouchableOpacity>
@@ -160,11 +220,11 @@ const styles = StyleSheet.create({
   scrollInner: {
     flexGrow: 1,
     paddingHorizontal: 28,
-    paddingTop: 60, // 상단 여백을 충분히 주어 글자가 덜 올라가게 함
+    paddingTop: 60,
     paddingBottom: 40,
   },
   headerArea: {
-    marginBottom: 60, // 글자와 입력창 사이 간격 확보
+    marginBottom: 60,
   },
   welcomeText: {
     fontSize: 34,
@@ -207,8 +267,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginTop: 10,
-    // 그림자 살짝 넣어주면 더 고급져요
-    shadowColor: "#000",
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 3,
@@ -225,7 +284,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   footer: {
-    marginTop: 'auto', // 내용이 적을 때 바닥에 붙도록 함
+    marginTop: 'auto',
     paddingTop: 30,
     alignItems: 'center',
   },

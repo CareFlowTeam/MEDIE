@@ -1,17 +1,19 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 
 
 class PillScheduleCreate(BaseModel):
     userId: str
+    pillId: str
     pillName: str
+    scheduleIndex: int = 0
+    label: Optional[str] = ""
     time: str
     enabled: bool = True
 
 
-class PillScheduleResponse(BaseModel):
-    id: str
-    userId: str
-    pillName: str
-    time: str
-    enabled: bool
+class PillScheduleUpdate(BaseModel):
+    pillName: Optional[str] = None
+    label: Optional[str] = None
+    time: Optional[str] = None
+    enabled: Optional[bool] = None
