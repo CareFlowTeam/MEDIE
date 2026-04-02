@@ -1,10 +1,18 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { StatusBar, View, Text, ActivityIndicator, KeyboardAvoidingView, Platform, TouchableOpacity, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  StatusBar,
+  View,
+  Text,
+  ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  TouchableOpacity,
+  StyleSheet,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SecureStore from 'expo-secure-store';
 import { ExpoSpeechRecognitionModule } from 'expo-speech-recognition';
 import { initNotifications, registerPushToken } from './src/services/notificationInit';
-import { API_BASE } from './src/api/api';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -39,6 +47,19 @@ import MedicationOnboardingScreen from './src/screens/MedicationOnboardingScreen
 import AppInfoScreen from './src/screens/AppInfoScreen';
 import ProfileEditScreen from './src/screens/ProfileEditScreen';
 
+import {
+  initAlarmNotifications,
+  scheduleMedicationAlarmTriple,
+  cancelMedicationAlarmTriple,
+  rescheduleMedicationAlarmTriple,
+} from './src/services/notificationAlarmService';
+
+import {
+  createPillSchedule,
+  updatePillSchedule,
+  deletePillSchedulesByPill,
+} from './src/services/pillScheduleService';
+
 /* hooks */
 import useCameraScan from './src/hooks/useCameraScan';
 import usePharmacySearch from './src/hooks/usePharmacySearch';
@@ -49,6 +70,8 @@ const STORAGE_KEY = 'MY_PILLS_JSON';
 const ONBOARDING_KEY = 'HAS_SEEN_MEDICATION_ONBOARDING';
 
 export default function App() {
+  const insets = useSafeAreaInsets();
+
   const [isStarted, setIsStarted] = useState(false);
   const [appMode, setAppMode] = useState('LOGIN');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -72,7 +95,6 @@ export default function App() {
   const [selectedPill, setSelectedPill] = useState(null);
   const [hasSeenMedicationOnboarding, setHasSeenMedicationOnboarding] = useState(false);
 
-  // 1. 알약 관련 훅 먼저 선언
   const {
     myPills,
     saveMyPills,
@@ -82,62 +104,116 @@ export default function App() {
     deletePill,
   } = useMyPills({ STORAGE_KEY });
 
-  // 2. registerPillFromAiResponse 정의
+  const showBottomBar =
+    isLoggedIn &&
+    ![
+      'LOGIN',
+      'REGISTER',
+      'MEDICATION_ONBOARDING',
+      'SCAN',
+      'BOARD',
+      'EDIT_POST',
+      'WRITE_BOARD',
+      'SUPPORT_WRITE',
+      'PROFILE_EDIT',
+      'APP_INFO',
+    ].includes(appMode);
+
   const registerPillFromAiResponse = useCallback(
     async (aiText) => {
       const responseText = typeof aiText === 'string' ? aiText : aiText?.rawText || '';
 
       const pillName =
         (typeof aiText === 'object' && aiText?.pillName) ||
+        responseText
+          .split('\n')
+          .find((l) => l.includes('알약 이름'))
+          ?.replace('💊 알약 이름: ', '') ||
         '알 수 없음';
 
-      // ✅ AI가 예측한 스케줄 사용 (없으면 아침 기본값)
-      const aiSchedule = (typeof aiText === 'object' && Array.isArray(aiText?.schedule))
-        ? aiText.schedule
-        : ['아침'];
+      const aiSchedule =
+        typeof aiText === 'object' && Array.isArray(aiText?.schedule)
+          ? aiText.schedule
+          : ['아침'];
 
       const LABEL_TIME_MAP = {
-        '아침': '08:00',
-        '점심': '12:00',
-        '저녁': '18:00',
-        '취침전': '21:00',
+        아침: '08:00',
+        점심: '12:00',
+        저녁: '18:00',
+        취침전: '21:00',
       };
 
-      // ✅ AI 예측 스케줄 → 알람 시간 자동 설정
-      const initialSchedules = aiSchedule.map(label => ({
+      const syncCreateSchedulesToServer = async (pill, schedules) => {
+        if (!user?.id) return schedules;
+
+        const syncedSchedules = [...schedules];
+
+        for (let i = 0; i < syncedSchedules.length; i += 1) {
+          const schedule = syncedSchedules[i];
+          try {
+            const result = await createPillSchedule({
+              userId: user.id,
+              pillId: pill.id,
+              pillName: pill.name,
+              scheduleIndex: i,
+              label: schedule.label || '',
+              time: schedule.time,
+              enabled: schedule.enabled ?? true,
+            });
+
+            syncedSchedules[i] = {
+              ...schedule,
+              serverScheduleId: result?.item?.id || null,
+            };
+          } catch (error) {
+            console.error('❌ 서버 스케줄 생성 실패:', error);
+          }
+        }
+
+        return syncedSchedules;
+      };
+
+      const initialSchedules = aiSchedule.map((label) => ({
         label,
         time: LABEL_TIME_MAP[label] || '08:00',
         notificationId: null,
+        notificationIds: [],
         enabled: true,
         takenToday: false,
       }));
 
-      const newPill = {
+      const tempPill = {
         id: Date.now().toString(),
         name: pillName,
-        usage: aiText?.usage || '',
-        warning: aiText?.warning || '',
-        confidence: aiText?.confidence
-          ? String(Math.round(Number(aiText.confidence) * 100))
-          : '100',
+        usage: typeof aiText === 'object' ? aiText?.usage || '' : '',
+        warning: typeof aiText === 'object' ? aiText?.caution || '' : '',
+        confidence: typeof aiText === 'object' ? aiText?.confidence || '100' : '100',
         schedules: initialSchedules,
-        alarmEnabled: true,  // ✅ 자동으로 알람 ON
+        alarmEnabled: true,
         notificationId: null,
         createdAt: Date.now(),
       };
 
+      const syncedSchedules = await syncCreateSchedulesToServer(tempPill, initialSchedules);
+
+      const newPill = {
+        ...tempPill,
+        schedules: syncedSchedules,
+      };
+
       const updated = [newPill, ...(myPills ?? [])];
+
       try {
         await saveMyPills(updated);
       } catch (e) {
         console.error('❌ saveMyPills 실패', e);
       }
+
       setAppMode('MY_PILL');
     },
-    [myPills, saveMyPills]
+    [myPills, saveMyPills, user]
   );
 
-  // 3. 카메라 스캔 훅
   const {
     cameraRef,
     isAnalyzing,
@@ -151,7 +227,6 @@ export default function App() {
     onRegisterPill: registerPillFromAiResponse,
   });
 
-  // 4. 나머지 훅 및 핸들러
   const {
     nearbyPharmacies,
     isSearchingMap,
@@ -202,11 +277,13 @@ export default function App() {
         scheduleIndex: index,
       }))
     );
+
     const next = allSchedules
       .sort((a, b) => (a.time || '99:99').localeCompare(b.time || '99:99'))
       .find((item) => !item.takenToday);
 
     if (!next) return;
+
     const updated = myPills.map((pill) => {
       if (pill.id !== next.pillId) return pill;
       return {
@@ -216,19 +293,28 @@ export default function App() {
         ),
       };
     });
+
     await saveMyPills(updated);
   }, [myPills, saveMyPills]);
 
-  const toggleAllAlarms = useCallback(async (enabled) => {
-    const updated = myPills.map(pill => ({ ...pill, alarmEnabled: enabled }));
-    await saveMyPills(updated);
-  }, [myPills, saveMyPills]);
+  const toggleAllAlarms = useCallback(
+    async (enabled) => {
+      const updated = myPills.map((pill) => ({ ...pill, alarmEnabled: enabled }));
+      await saveMyPills(updated);
+    },
+    [myPills, saveMyPills]
+  );
 
   const deleteAllAlarms = useCallback(async () => {
-    const updated = myPills.map(pill => ({
+    const updated = myPills.map((pill) => ({
       ...pill,
       alarmEnabled: false,
-      schedules: (pill.schedules || []).map(s => ({ ...s, notificationId: null, enabled: false }))
+      schedules: (pill.schedules || []).map((s) => ({
+        ...s,
+        notificationId: null,
+        notificationIds: [],
+        enabled: false,
+      })),
     }));
     await saveMyPills(updated);
   }, [myPills, saveMyPills]);
@@ -238,10 +324,9 @@ export default function App() {
     setAppMode('ALARM');
   };
 
-  // ✅ pillHistory 포맷 정규화 함수
   const handlePillHistoryUpdate = useCallback((newHistory) => {
     if (!Array.isArray(newHistory)) return;
-    const normalized = newHistory.map(item => ({
+    const normalized = newHistory.map((item) => ({
       date: item.date || new Date().toISOString().slice(0, 10),
       time: item.time || '--:--',
       taken: item.taken ?? true,
@@ -252,11 +337,143 @@ export default function App() {
     setPillHistory(normalized);
   }, []);
 
+  const togglePillAlarmAndReschedule = useCallback(
+    async (pillId) => {
+      const targetPill = myPills.find((pill) => pill.id === pillId);
+      if (!targetPill) return;
+
+      const nextEnabled = !targetPill.alarmEnabled;
+
+      const updated = await Promise.all(
+        myPills.map(async (pill) => {
+          if (pill.id !== pillId) return pill;
+
+          const nextSchedules = await Promise.all(
+            (pill.schedules || []).map(async (schedule, index) => {
+              if (nextEnabled) {
+                const newIds = await scheduleMedicationAlarmTriple({
+                  pillId: pill.id,
+                  pillName: pill.name,
+                  time: schedule.time || '08:00',
+                  scheduleIndex: index,
+                });
+
+                if (schedule.serverScheduleId && user?.id) {
+                  try {
+                    await updatePillSchedule(schedule.serverScheduleId, user.id, {
+                      enabled: true,
+                    });
+                  } catch (error) {
+                    console.error('알람 ON 서버 동기화 실패:', error);
+                  }
+                }
+
+                return { ...schedule, enabled: true, notificationIds: newIds };
+              }
+
+              await cancelMedicationAlarmTriple(schedule.notificationIds || []);
+
+              if (schedule.serverScheduleId && user?.id) {
+                try {
+                  await updatePillSchedule(schedule.serverScheduleId, user.id, {
+                    enabled: false,
+                  });
+                } catch (error) {
+                  console.error('알람 OFF 서버 동기화 실패:', error);
+                }
+              }
+
+              return { ...schedule, enabled: false, notificationIds: [] };
+            })
+          );
+
+          return { ...pill, alarmEnabled: nextEnabled, schedules: nextSchedules };
+        })
+      );
+
+      await saveMyPills(updated);
+    },
+    [myPills, saveMyPills, user]
+  );
+
+  const changePillAlarmTimeAndReschedule = useCallback(
+    async (pillId, nextTime) => {
+      const updated = await Promise.all(
+        myPills.map(async (pill) => {
+          if (pill.id !== pillId) return pill;
+
+          const nextSchedules = await Promise.all(
+            (pill.schedules || []).map(async (schedule, index) => {
+              let nextNotificationIds = schedule.notificationIds || [];
+
+              if (pill.alarmEnabled) {
+                nextNotificationIds = await rescheduleMedicationAlarmTriple({
+                  oldNotificationIds: schedule.notificationIds || [],
+                  pillId: pill.id,
+                  pillName: pill.name,
+                  time: nextTime,
+                  scheduleIndex: index,
+                });
+              }
+
+              if (schedule.serverScheduleId && user?.id) {
+                try {
+                  await updatePillSchedule(schedule.serverScheduleId, user.id, {
+                    time: nextTime,
+                    enabled: pill.alarmEnabled,
+                  });
+                } catch (error) {
+                  console.error('시간 변경 서버 동기화 실패:', error);
+                }
+              }
+
+              return {
+                ...schedule,
+                time: nextTime,
+                notificationIds: nextNotificationIds,
+                enabled: pill.alarmEnabled,
+              };
+            })
+          );
+
+          return { ...pill, schedules: nextSchedules };
+        })
+      );
+
+      await saveMyPills(updated);
+    },
+    [myPills, saveMyPills, user]
+  );
+
+  const deletePillAndCancelAlarm = useCallback(
+    async (pillId) => {
+      const targetPill = myPills.find((pill) => pill.id === pillId);
+      if (!targetPill) return;
+
+      for (const schedule of targetPill.schedules || []) {
+        await cancelMedicationAlarmTriple(schedule.notificationIds || []);
+      }
+
+      if (user?.id) {
+        try {
+          await deletePillSchedulesByPill(pillId, user.id);
+        } catch (error) {
+          console.error('서버 pill schedule 삭제 실패:', error);
+        }
+      }
+
+      await deletePill(pillId);
+    },
+    [myPills, deletePill, user]
+  );
+
   useEffect(() => {
     const setup = async () => {
       try {
         setIsCheckingLogin(true);
+
         await initNotifications();
+        await initAlarmNotifications();
         await ExpoSpeechRecognitionModule.requestPermissionsAsync();
 
         const accessToken = await SecureStore.getItemAsync('accessToken');
@@ -271,6 +488,7 @@ export default function App() {
         if (accessToken && userId) {
           setIsLoggedIn(true);
           await registerPushToken(userId);
+
           setUser({
             id: userId,
             name: userName || 'MEDI 사용자',
@@ -283,12 +501,14 @@ export default function App() {
           setAppMode('LOGIN');
         }
       } catch (error) {
+        console.error('초기 설정 실패:', error);
         setIsLoggedIn(false);
         setAppMode('LOGIN');
       } finally {
         setIsCheckingLogin(false);
       }
     };
+
     setup();
   }, []);
 
@@ -307,7 +527,13 @@ export default function App() {
       <StartScreen
         onStart={() => {
           setIsStarted(true);
-          setAppMode(isLoggedIn ? (hasSeenMedicationOnboarding ? 'HOME' : 'MEDICATION_ONBOARDING') : 'LOGIN');
+          setAppMode(
+            isLoggedIn
+              ? hasSeenMedicationOnboarding
+                ? 'HOME'
+                : 'MEDICATION_ONBOARDING'
+              : 'LOGIN'
+          );
         }}
         user={isLoggedIn ? user : null}
       />
@@ -318,11 +544,22 @@ export default function App() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <StatusBar backgroundColor="#F7F3DD" barStyle="dark-content" />
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={{ flex: 1 }}
+        >
           {appMode === 'REGISTER' ? (
-            <RegisterScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />
+            <RegisterScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
           ) : (
-            <LoginScreen setAppMode={setAppMode} setIsLoggedIn={setIsLoggedIn} setUser={setUser} />
+            <LoginScreen
+              setAppMode={setAppMode}
+              setIsLoggedIn={setIsLoggedIn}
+              setUser={setUser}
+            />
           )}
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -342,7 +579,10 @@ export default function App() {
               return (
                 <HomeScreen
                   setAppMode={setAppMode}
-                  onPressMap={() => { setAppMode('MAP'); findNearbyPharmacies(); }}
+                  onPressMap={() => {
+                    setAppMode('MAP');
+                    findNearbyPharmacies();
+                  }}
                   isLoggedIn={isLoggedIn}
                   user={user}
                   myPills={myPills}
@@ -350,8 +590,10 @@ export default function App() {
                   setUser={setUser}
                 />
               );
+
             case 'APP_INFO':
               return <AppInfoScreen setAppMode={setAppMode} />;
+
             case 'PROFILE_EDIT':
               return (
                 <ProfileEditScreen
@@ -360,6 +602,7 @@ export default function App() {
                   onBack={() => setAppMode('MY_PAGE')}
                 />
               );
+
             case 'MEDICATION_ONBOARDING':
               return (
                 <MedicationOnboardingScreen
@@ -368,6 +611,7 @@ export default function App() {
                   onSelectNo={handleMedicationOnboardingDone}
                 />
               );
+
             case 'SCAN':
               return (
                 <ScanScreen
@@ -382,26 +626,29 @@ export default function App() {
                   setAppMode={setAppMode}
                 />
               );
+
             case 'MY_PILL':
               return (
                 <MyPillScreen
                   setAppMode={setAppMode}
                   myPills={myPills}
                   onToggleAlarm={goAlarmFromPill}
-                  onDeletePill={deletePill}
+                  onDeletePill={deletePillAndCancelAlarm}
                   selectedPill={selectedPill}
                   setSelectedPill={setSelectedPill}
                 />
               );
+
             case 'MY_PILL_DETAIL':
               return (
                 <MyPillDetailScreen
                   pill={selectedPill}
                   onToggleAlarm={goAlarmFromPill}
-                  onDeletePill={deletePill}
+                  onDeletePill={deletePillAndCancelAlarm}
                   setAppMode={setAppMode}
                 />
               );
+
             case 'MAP':
               return (
                 <MapScreen
@@ -413,24 +660,21 @@ export default function App() {
                   openKakaoMapDetail={openKakaoMapDetail}
                 />
               );
+
             case 'ALARM':
               return (
                 <AlarmScreen
                   myPills={myPills}
                   setAppMode={setAppMode}
-                  togglePillAlarm={togglePillAlarm}
-                  changePillAlarmTime={changePillAlarmTime}
-                  deletePill={deletePill}
+                  togglePillAlarm={togglePillAlarmAndReschedule}
+                  changePillAlarmTime={changePillAlarmTimeAndReschedule}
+                  deletePill={deletePillAndCancelAlarm}
                 />
               );
+
             case 'HISTORY':
-              // ✅ pillHistory 전달 추가
-              return (
-                <HistoryScreen
-                  setAppMode={setAppMode}
-                  pillHistory={pillHistory}
-                />
-              );
+              return <HistoryScreen setAppMode={setAppMode} pillHistory={pillHistory} />;
+
             case 'SEARCH_PILL':
               return (
                 <SearchPillScreen
@@ -439,6 +683,7 @@ export default function App() {
                   onSearch={() => setSearchKeyword('')}
                 />
               );
+
             case 'COMMUNITY':
               return (
                 <CommunityScreen
@@ -447,6 +692,7 @@ export default function App() {
                   setWriteBoardType={setWriteBoardType}
                 />
               );
+
             case 'BOARD':
               return (
                 <BoardScreen
@@ -454,20 +700,17 @@ export default function App() {
                   post={selectedPost}
                   boardTitle={selectedBoardTitle}
                   onBack={handleBackToCommunity}
-                  currentUserName={user.nickname || user.name}  // ← user.id → user.name 으로 변경
+                  currentUserName={user.nickname || user.name}
                   onEditBoard={(post) => {
                     setSelectedPost(post);
                     setAppMode('EDIT_POST');
                   }}
                 />
               );
+
             case 'EDIT_POST':
-              return (
-                <EditPostScreen
-                  setAppMode={setAppMode}
-                  post={selectedPost}
-                />
-              );
+              return <EditPostScreen setAppMode={setAppMode} post={selectedPost} />;
+
             case 'SUPPORT':
               return (
                 <SupportMainScreen
@@ -478,6 +721,7 @@ export default function App() {
                   }}
                 />
               );
+
             case 'SUPPORT_DETAIL':
               return (
                 <SupportListScreen
@@ -486,8 +730,10 @@ export default function App() {
                   setAppMode={setAppMode}
                 />
               );
+
             case 'SUPPORT_WRITE':
               return <SupportWriteScreen setAppMode={setAppMode} />;
+
             case 'MY_PAGE':
               return (
                 <MyPageScreen
@@ -503,6 +749,7 @@ export default function App() {
                   }}
                 />
               );
+
             case 'WRITE_BOARD':
               return (
                 <WriteBoardScreen
@@ -512,6 +759,7 @@ export default function App() {
                   onDraftUsed={() => setVoicePostDraft(null)}
                 />
               );
+
             default:
               return (
                 <HomeScreen
@@ -525,28 +773,58 @@ export default function App() {
         })()}
       </View>
 
-      {/* 하단바 */}
-      {!['LOGIN', 'REGISTER', 'MEDICATION_ONBOARDING', 'SCAN', 'START', 'APP_INFO', 'PROFILE_EDIT'].includes(appMode) && (
-        <View style={appStyles.bottomBar}>
+      {showBottomBar && (
+        <View
+          style={[
+            appStyles.bottomBar,
+            {
+              height:
+                Platform.OS === 'ios'
+                  ? 70 + insets.bottom
+                  : 62 + Math.max(insets.bottom, 8),
+              paddingBottom:
+                Platform.OS === 'ios'
+                  ? Math.max(insets.bottom, 10)
+                  : Math.max(insets.bottom, 8),
+            },
+          ]}
+        >
           <TouchableOpacity onPress={() => setAppMode('HOME')} style={appStyles.tabItem}>
             <Ionicons name="home" size={26} color={appMode === 'HOME' ? '#065809' : '#67A369'} />
-            <Text style={[appStyles.tabText, { color: appMode === 'HOME' ? '#065809' : '#67A369' }]}>홈</Text>
+            <Text style={[appStyles.tabText, { color: appMode === 'HOME' ? '#065809' : '#67A369' }]}>
+              홈
+            </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setAppMode('MAP'); findNearbyPharmacies(); }} style={appStyles.tabItem}>
+
+          <TouchableOpacity
+            onPress={() => { setAppMode('MAP'); findNearbyPharmacies(); }}
+            style={appStyles.tabItem}
+          >
             <Ionicons name="location" size={26} color={appMode === 'MAP' ? '#065809' : '#67A369'} />
-            <Text style={[appStyles.tabText, { color: appMode === 'MAP' ? '#065809' : '#67A369' }]}>약국</Text>
+            <Text style={[appStyles.tabText, { color: appMode === 'MAP' ? '#065809' : '#67A369' }]}>
+              약국
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => setAppMode('SEARCH_PILL')} style={appStyles.tabItem}>
             <Ionicons name="search" size={26} color={appMode === 'SEARCH_PILL' ? '#065809' : '#67A369'} />
-            <Text style={[appStyles.tabText, { color: appMode === 'SEARCH_PILL' ? '#065809' : '#67A369' }]}>검색</Text>
+            <Text style={[appStyles.tabText, { color: appMode === 'SEARCH_PILL' ? '#065809' : '#67A369' }]}>
+              검색
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => setAppMode('COMMUNITY')} style={appStyles.tabItem}>
             <Ionicons name="chatbubble-ellipses" size={26} color={appMode === 'COMMUNITY' ? '#065809' : '#67A369'} />
-            <Text style={[appStyles.tabText, { color: appMode === 'COMMUNITY' ? '#065809' : '#67A369' }]}>커뮤니티</Text>
+            <Text style={[appStyles.tabText, { color: appMode === 'COMMUNITY' ? '#065809' : '#67A369' }]}>
+              커뮤니티
+            </Text>
           </TouchableOpacity>
+
           <TouchableOpacity onPress={() => setAppMode('MY_PAGE')} style={appStyles.tabItem}>
             <Ionicons name="person" size={26} color={appMode === 'MY_PAGE' ? '#065809' : '#67A369'} />
-            <Text style={[appStyles.tabText, { color: appMode === 'MY_PAGE' ? '#065809' : '#67A369' }]}>마이페이지</Text>
+            <Text style={[appStyles.tabText, { color: appMode === 'MY_PAGE' ? '#065809' : '#67A369' }]}>
+              마이페이지
+            </Text>
           </TouchableOpacity>
         </View>
       )}
@@ -555,15 +833,14 @@ export default function App() {
         appMode={appMode}
         setAppMode={setAppMode}
         onCompleteNextDose={completeNextDose}
-        onChangeAlarmTime={changePillAlarmTime}
-        onToggleAlarm={togglePillAlarm}
+        onChangeAlarmTime={changePillAlarmTimeAndReschedule}
+        onToggleAlarm={togglePillAlarmAndReschedule}
         onToggleAllAlarms={toggleAllAlarms}
         onDeleteAllAlarms={deleteAllAlarms}
         onSearchDrug={(keyword) => setSearchKeyword(keyword)}
         onWritePost={(draft) => setVoicePostDraft(draft)}
         myPills={myPills}
         pillHistory={pillHistory}
-        // ✅ 포맷 정규화 핸들러
         onPillHistoryUpdate={handlePillHistoryUpdate}
       />
     </SafeAreaView>
@@ -571,16 +848,37 @@ export default function App() {
 }
 
 const appStyles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  screenContainer: {
+    flex: 1,
+  },
   bottomBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     flexDirection: 'row',
-    height: Platform.OS === 'ios' ? 85 : 70,
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#eee',
-    paddingBottom: Platform.OS === 'ios' ? 15 : 0,
     alignItems: 'center',
     justifyContent: 'space-around',
   },
-  tabItem: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  tabText: { fontSize: 11, fontWeight: '800', marginTop: 3 },
+  tabItem: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tabText: {
+    fontSize: 11,
+    fontWeight: '800',
+    marginTop: 3,
+  },
 });

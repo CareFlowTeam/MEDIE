@@ -1,7 +1,9 @@
 from datetime import datetime, timedelta
 import jwt
-from fastapi import Depends, HTTPException
+from fastapi import Header, Depends, HTTPException, status
 from fastapi.security import HTTPBearer
+from app.core.security import decode_access_token
+
 
 JWT_SECRET = "MEDICLENS_DEVICE_SECRET"
 JWT_ALG = "HS256"
@@ -27,3 +29,29 @@ def verify_device_jwt(token=Depends(security)):
         raise HTTPException(status_code=401, detail="JWT expired")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="Invalid JWT")
+
+
+def verify_access_jwt(authorization: str = Header(None)):
+    if not authorization:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authorization 헤더가 없습니다.",
+        )
+
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Bearer 토큰 형식이 아닙니다.",
+        )
+
+    token = authorization.replace("Bearer ", "", 1).strip()
+    payload = decode_access_token(token)
+
+    user_id = payload.get("sub")
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid JWT",
+        )
+
+    return payload
