@@ -9,7 +9,7 @@
   <img src="assets/preview_map.png" width="22%" alt="약국 지도" />
 </p>
 <p align="center">
-  <i>홈 · 음성 대화 · 약 스캔 · 커뮤니티</i>
+  <i>홈 · 음성 대화 · 약 스캔 · 약국 지도</i>
 </p>
 
 ![React Native](https://img.shields.io/badge/React_Native-20232A?style=for-the-badge&logo=react&logoColor=61DAFB)
